@@ -15,6 +15,9 @@ namespace TimeShot
         private string? dataPath = null;
         private List<StreamInfo> streamInfo = null;
         private List<StreamOutlet> streamOutlet = null;
+        private bool isStreaming = false;
+        private CameraFrameStreamer cameraStreamer;
+        CameraOutputForm cameraOutputForm;
 
         public MainForm(string[] args)
         {
@@ -29,6 +32,29 @@ namespace TimeShot
                 MaterialSkin.TextShade.WHITE
             );
             GetAvailableCameras();
+            cameraStreamer = new CameraFrameStreamer();
+            cameraStreamer.FrameReady += OnFrameReady;
+        }
+
+
+        // Start streaming from the selected camera
+        private void StartStreaming(int cameraIndex)
+        {
+            cameraStreamer?.Stop(); // Stop previous stream if any
+
+            cameraStreamer = new CameraFrameStreamer();
+            cameraStreamer.FrameReady += OnFrameReady;
+            cameraStreamer.Start(cameraIndex);
+        }
+
+        private void StopStreaming(int cameraIndex)
+        {
+            cameraStreamer?.Stop(); // Stop previous stream if any
+        }
+
+        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            cameraStreamer?.Stop();
         }
         private void GetAvailableCameras()
         {
@@ -81,6 +107,8 @@ namespace TimeShot
             if (StreamButton.Enabled == false)
             {
                 StreamButton.Enabled = true;
+                StopStreaming(0);
+                cameraOutputForm?.Close();
                 return;
             }
             if (CreateStreamButton.Enabled == false)
@@ -98,7 +126,33 @@ namespace TimeShot
 
         private void StreamButton_Click(object sender, EventArgs e)
         {
+            cameraOutputForm = new CameraOutputForm();
+            cameraOutputForm.Show();
+            StreamButton.Enabled = false;
+            StartStreaming(0);
+        }
 
+        private void OnFrameReady(Mat frame)
+        {
+            if (cameraOutputForm == null)
+                return;
+            OnFrameReady(frame, cameraOutputForm);
+        }
+
+        private void OnFrameReady(Mat frame, CameraOutputForm cameraOutputForm)
+        {
+            // Marshal to UI thread if needed
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => OnFrameReady(frame)));
+                return;
+            }
+
+            // Convert Mat to Bitmap
+            var bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(frame);
+            cameraOutputForm.pictureBox1.Image?.Dispose();
+            cameraOutputForm.pictureBox1.Image = bitmap;
         }
     }
+
 }
