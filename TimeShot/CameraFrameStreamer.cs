@@ -11,6 +11,8 @@ namespace TimeShot
 
         private VideoCapture? capture;
         private CancellationTokenSource? cancellationTokenSource;
+        private VideoWriter? videoWriter;
+        private bool isRecording = false;
 
         public event Action<Mat>? FrameReady;
 
