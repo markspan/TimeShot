@@ -1,7 +1,8 @@
 using MaterialSkin.Controls;
 using LSL;                      // labstreaminglayer
 using OpenCvSharp;              // for videocapture and videowriter
-using OpenCvSharp.Extensions;   // for bitmapconverter
+using OpenCvSharp.Extensions;
+using System.DirectoryServices;   // for bitmapconverter
 
 namespace TimeShot
 {
@@ -92,26 +93,36 @@ namespace TimeShot
         }
 
         /// <summary>
-        /// Stop button with contextual behavior.
+        /// Stop button with contextual behavior: stop recording, close streams, or exit.
         /// </summary>
         private void StopButton_Click(object sender, EventArgs e)
         {
             if (cameraSessions.Any(s => s.IsRecording))
             {
+                var confirmResult = MessageBox.Show(
+                    "Recording is in progress. Are you sure you want to stop?",
+                    "Confirm Stop Recording",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (confirmResult == DialogResult.No)
+                    return;
+
                 // Case 1: Stop recording and streaming
                 foreach (var session in cameraSessions)
-                    session.Stop();
+                    session?.Stop();
 
                 cameraSessions.Clear();
                 CreateStreamButton.Enabled = true;
-                StreamButton.Enabled = true;
+                StreamButton.Enabled = false;
                 StopButton.Text = "Exit TimeShot";
             }
             else if (cameraSessions.Count > 0)
             {
                 // Case 2: Stop previews (no recording yet)
-                foreach (var session in cameraSessions)
+                foreach (var session in cameraSessions) 
                     session.Stop();
+                    
 
                 cameraSessions.Clear();
                 CreateStreamButton.Enabled = true;
@@ -186,7 +197,7 @@ namespace TimeShot
         public bool IsRecording => recording;
 
         /// <summary>
-        /// Initializes the frame streamer.
+        /// Initializes the frame streamer and dynamically sets the form size based on capture resolution.
         /// </summary>
         public CameraFrameStreamer(int index, string file, string stream)
         {
@@ -206,6 +217,11 @@ namespace TimeShot
 
             capture = new VideoCapture(cameraIndex);
             OutputForm = new CameraOutputForm();
+
+            // Get actual camera resolution for dynamic form size adjustment
+            var cameraWidth = (int)capture.Get(3);
+            var cameraHeight = (int)capture.Get(4);
+            OutputForm.Size = new System.Drawing.Size(cameraWidth, cameraHeight);
 
             cts = new CancellationTokenSource();
             captureTask = Task.Run(() => CaptureLoopAsync(cts.Token));
@@ -229,12 +245,39 @@ namespace TimeShot
         /// </summary>
         public void Stop()
         {
-            running = false;
-            capture.Release();
-            videoWriter.Release();
-            streamOutlet.Close();
-            OutputForm?.Invoke(() => OutputForm.Close());
+            // Flag to indicate we want to stop the recording
+            recording = false;
+
+            // Cancel the task
+            cts?.Cancel();
+
+            // Allow asynchronous handling of the task's completion
+            if (captureTask != null)
+            {
+                try
+                {
+                    // Await task completion and ensure proper cleanup after cancellation
+                    captureTask = captureTask.ContinueWith(t =>
+                    {
+                        // Safely release resources and close the output form
+                        capture.Release();
+                        videoWriter.Release();
+                        streamOutlet.Close();
+
+                        OutputForm?.Invoke(() => OutputForm.Close());
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // Log or handle any exceptions that may arise when stopping the task
+                    Console.WriteLine("Error stopping the task: " + ex.Message);
+                }
+            }
+
+            // Ensure cancellation has been completed
+            //captureTask?.Wait();
         }
+
 
         /// <summary>
         /// Capture loop: updates preview and optionally records and streams.
@@ -248,14 +291,15 @@ namespace TimeShot
                 capture.Read(frame);
                 if (frame.Empty())
                 {
-                    await Task.Delay(10, token);  // avoid busy looping
+                    // If frame is empty, wait briefly to avoid CPU overload
+                    await Task.Delay(10, token);
                     continue;
                 }
 
                 // If recording, write to file and send LSL marker
                 if (recording)
                 {
-                    // Draw frame index
+                    // Draw frame index as a marker on the frame
                     Cv2.PutText(frame, $"{frameIndex}", new OpenCvSharp.Point(10, 30),
                         HersheyFonts.HersheySimplex, 1, Scalar.Red, 2);
                     videoWriter.Write(frame);
@@ -271,8 +315,7 @@ namespace TimeShot
                     OutputForm.pictureBox1.Image = bmp;
                 });
 
-
-                // Optional throttle to reduce CPU, adjust if needed
+                // Allow cancellation to be detected frequently
                 await Task.Delay(1, token);
             }
         }

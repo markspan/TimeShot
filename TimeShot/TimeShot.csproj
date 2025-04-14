@@ -6,7 +6,23 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>TimeShot.ico</ApplicationIcon>
+    <PackageIcon>TimeShot.png</PackageIcon>
   </PropertyGroup>
+	<PropertyGroup>
+	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
+	  <NoWarn>1591</NoWarn> <!-- Optional: suppress warnings about missing comments -->
+	</PropertyGroup>
+  <ItemGroup>
+    <Content Include="TimeShot.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\TimeShot.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="MaterialSkin.2" Version="2.3.1" />
