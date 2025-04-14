@@ -54,7 +54,7 @@ namespace TimeShot
         {
             cameraSessions.Clear();
             int cameraIndex = 0;
-
+            CreateStreamButton.Enabled = false;
             foreach (Control control in CameraBox.Controls)
             {
                 if (control is CameraInfo camInfo && camInfo.Check.Checked)
