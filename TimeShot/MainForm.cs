@@ -1,257 +1,281 @@
 using MaterialSkin.Controls;
-using LSL;                      // LabStreamingLayer
-using OpenCvSharp;              // For VideoCapture and VideoWriter
-using OpenCvSharp.Extensions;   // For BitmapConverter
+using LSL;                      // labstreaminglayer
+using OpenCvSharp;              // for videocapture and videowriter
+using OpenCvSharp.Extensions;   // for bitmapconverter
 
 namespace TimeShot
 {
     public partial class MainForm : MaterialForm
     {
         readonly MaterialSkin.MaterialSkinManager materialSkinManager;
-        //private readonly string[]? cameraList = null;
-        //private readonly List<CameraInfo>? cameraControls = null;
-        //private string? dataPath = null;
-        private List<StreamInfo>? streamInfo = null;
-        private List<StreamOutlet>? streamOutlet = null;
-        private bool isStreaming = false;
-        private VideoWriter? videoWriter;
-        private CameraFrameStreamer cameraStreamer;
-        private CameraOutputForm cameraOutputForm;
-        private int frameIndex = 0;
+        private readonly List<CameraSession> cameraSessions = new();
 
-
-        /// <summary>
-        /// Initializes the MainForm and configures the MaterialSkin theme.
-        /// </summary>
-        /// <param name="args">Command-line arguments (unused)</param>
         public MainForm(string[] args)
         {
             InitializeComponent();
+
             materialSkinManager = MaterialSkin.MaterialSkinManager.Instance;
             materialSkinManager.AddFormToManage(this);
             materialSkinManager.Theme = MaterialSkin.MaterialSkinManager.Themes.LIGHT;
             materialSkinManager.ColorScheme = new MaterialSkin.ColorScheme(
                 MaterialSkin.Primary.Blue400, MaterialSkin.Primary.Blue500,
                 MaterialSkin.Primary.Blue500, MaterialSkin.Accent.LightBlue200,
-                MaterialSkin.TextShade.WHITE);
-
+                MaterialSkin.TextShade.WHITE
+            );
             GetAvailableCameras();
-            cameraStreamer = new CameraFrameStreamer();
-            cameraStreamer.FrameReady += OnFrameReady;
         }
 
         /// <summary>
-        /// Starts streaming video from the specified camera index.
-        /// </summary>
-        /// <param name="cameraIndex">Index of the camera to stream from</param>
-        private void StartStreaming(int cameraIndex)
-        {
-            cameraStreamer?.Stop();
-            cameraStreamer = new CameraFrameStreamer();
-            cameraStreamer.FrameReady += OnFrameReady;
-            cameraStreamer.Start(cameraIndex);
-        }
-
-        /// <summary>
-        /// Stops video streaming.
-        /// </summary>
-        /// <param name="cameraIndex">Camera index (currently unused)</param>
-        private void StopStreaming(int cameraIndex)
-        {
-            cameraStreamer?.Stop();
-        }
-
-        /// <summary>
-        /// Called when the form is closing. Stops any active camera streams.
-        /// </summary>
-        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            cameraStreamer?.Stop();
-        }
-
-        /// <summary>
-        /// Detects and displays available cameras by probing up to 10 indices.
+        /// Detect available cameras and add them to the CameraBox control.
         /// </summary>
         private void GetAvailableCameras()
         {
             for (int i = 0; i < 10; i++)
             {
-                using (var capture = new VideoCapture(i))
+                using var capture = new VideoCapture(i);
+                if (capture.IsOpened())
                 {
-                    if (capture.IsOpened())
-                    {
-                        CameraInfo cam = new CameraInfo
-                        {
-                            Size = new System.Drawing.Size(569, 52),
-                            Location = new System.Drawing.Point(9, 3 + (54 * i))
-                        };
-                        cam.Check.Checked = true;
-                        cam.CamName.Text = $"Camera {i}";
-                        cam.FileName.Text = $"Cam{i}.mp4";
-                        cam.StreamName.Text = $"Cam{i}_Stream";
-                        CameraBox.Controls.Add(cam);
-                    }
+                    CameraInfo cam = new();
+                    cam.Check.Checked = true;
+                    cam.CamName.Text = $"Camera {i}";
+                    cam.FileName.Text = $"Cam{i}.mp4";
+                    cam.StreamName.Text = $"Cam{i}_Stream";
+                    cam.Size = new System.Drawing.Size(569, 52);
+                    cam.Location = new System.Drawing.Point(9, 3 + (54 * i));
+                    CameraBox.Controls.Add(cam);
                 }
             }
         }
 
         /// <summary>
-        /// Creates LSL streams for selected cameras and starts preview output.
+        /// Create camera sessions and preview windows for selected cameras.
         /// </summary>
         private void CreateStreamButton_Click(object sender, EventArgs e)
         {
+            cameraSessions.Clear();
+            int cameraIndex = 0;
+
             foreach (Control control in CameraBox.Controls)
             {
-                streamInfo = [];
-                streamOutlet = [];
-
-                if (control is CameraInfo cameraInstance && cameraInstance.Check.Checked)
+                if (control is CameraInfo camInfo && camInfo.Check.Checked)
                 {
-                    string streamName = cameraInstance.StreamName.Text;
-                    // string fileName = cameraInstance.FileName.Text;
+                    var session = new CameraSession(
+                        cameraIndex,
+                        camInfo.FileName.Text,
+                        camInfo.StreamName.Text
+                    );
 
-                    var si = new StreamInfo(streamName, "Markers", 1, 0, channel_format_t.cf_int64, DateTime.Now.ToString());
-                    streamInfo.Add(si);
-                    streamOutlet.Add(new StreamOutlet(si));
+                    session.OutputForm.Show();
+                    cameraSessions.Add(session);
+                    cameraIndex++;
                 }
+            }
 
+            if (cameraSessions.Count > 0)
+            {
                 CreateStreamButton.Enabled = false;
-                cameraOutputForm = new CameraOutputForm();
-                cameraOutputForm.Size = new System.Drawing.Size(640, 480);
-                cameraOutputForm.Show();
-                isStreaming = false;
-                StartStreaming(0);
-            }
-        }
-
-        /// <summary>
-        /// Stops streaming and recording, or closes streams and video writers.
-        /// </summary>
-        private void StopButton_Click(object sender, EventArgs e)
-        {
-            if (!StreamButton.Enabled)
-            {
                 StreamButton.Enabled = true;
-                StopStreaming(0);
-                cameraOutputForm?.Close();
-                return;
-            }
-
-            if (!CreateStreamButton.Enabled)
-            {
-                CreateStreamButton.Enabled = true;
-                if (streamInfo != null && streamOutlet != null)
-                {
-                    foreach (var stream in streamInfo) stream.Dispose();
-                    foreach (var stream in streamOutlet) stream.Dispose();
-                }
-
-                streamInfo?.Clear();
-                streamOutlet?.Clear();
-                StopRecording();
+                StopButton.Text = "Close Streams";
             }
         }
 
         /// <summary>
-        /// Begins video recording and stream output for selected cameras.
+        /// Start recording for all active camera sessions.
         /// </summary>
         private void StreamButton_Click(object sender, EventArgs e)
         {
-            isStreaming = true;
-            foreach (Control control in CameraBox.Controls)
+            foreach (var session in cameraSessions)
+                session.Start();
+
+            StreamButton.Enabled = false;
+            StopButton.Text = "Stop Recording";
+        }
+
+        /// <summary>
+        /// Stop button with contextual behavior.
+        /// </summary>
+        private void StopButton_Click(object sender, EventArgs e)
+        {
+            if (cameraSessions.Any(s => s.IsRecording))
             {
-                if (control is CameraInfo cameraInstance && cameraInstance.Check.Checked)
-                {
-                    string fileName = cameraInstance.FileName.Text;
-                    StartRecording(fileName);
-                    StreamButton.Enabled = false;
-                }
+                // Case 1: Stop recording and streaming
+                foreach (var session in cameraSessions)
+                    session.Stop();
+
+                cameraSessions.Clear();
+                CreateStreamButton.Enabled = true;
+                StreamButton.Enabled = true;
+                StopButton.Text = "Exit TimeShot";
+            }
+            else if (cameraSessions.Count > 0)
+            {
+                // Case 2: Stop previews (no recording yet)
+                foreach (var session in cameraSessions)
+                    session.Stop();
+
+                cameraSessions.Clear();
+                CreateStreamButton.Enabled = true;
+                StreamButton.Enabled = true;
+                StopButton.Text = "Exit TimeShot";
+            }
+            else
+            {
+                // Case 3: Exit application
+                Close();
             }
         }
 
-        /// <summary>
-        /// Delegates frame handling to overloaded method with display output.
-        /// </summary>
-        private void OnFrameReady(Mat frame)
+        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            if (cameraOutputForm == null) return;
-            OnFrameReady(frame, cameraOutputForm);
+            foreach (var session in cameraSessions)
+                session.Stop();
+        }
+    }
+
+    /// <summary>
+    /// Represents a single camera session.
+    /// </summary>
+    public class CameraSession
+    {
+        private readonly CameraFrameStreamer frameStreamer;
+        public CameraOutputForm OutputForm => frameStreamer.OutputForm;
+
+        public CameraSession(int index, string file, string stream)
+        {
+            frameStreamer = new CameraFrameStreamer(index, file, stream);
         }
 
         /// <summary>
-        /// Starts the video writer for saving frames to disk.
+        /// Start recording.
         /// </summary>
-        /// <param name="fileName">Output file path for video</param>
-        private void StartRecording(string fileName)
+        public void Start() => frameStreamer.StartRecording();
+
+        /// <summary>
+        /// Stop recording.
+        /// </summary>
+        public void Stop() => frameStreamer.Stop();
+
+        /// <summary>
+        /// Indicates whether the session is currently recording.
+        /// </summary>
+        public bool IsRecording => frameStreamer.IsRecording;
+    }
+
+    /// <summary>
+    /// Captures and streams frames from a camera device.
+    /// </summary>
+    public class CameraFrameStreamer
+    {
+        private readonly int cameraIndex;
+        private readonly string fileName;
+        private readonly string streamName;
+        private readonly StreamOutlet streamOutlet;
+        private readonly VideoWriter videoWriter;
+        private readonly VideoCapture capture;
+        private Task? captureTask;
+        private CancellationTokenSource? cts;
+        private bool recording = false;
+        private bool running = true;
+        private int frameIndex = 0;
+
+        public CameraOutputForm OutputForm { get; private set; }
+
+        /// <summary>
+        /// Indicates whether recording is active.
+        /// </summary>
+        public bool IsRecording => recording;
+
+        /// <summary>
+        /// Initializes the frame streamer.
+        /// </summary>
+        public CameraFrameStreamer(int index, string file, string stream)
         {
+            cameraIndex = index;
+            fileName = file;
+            streamName = stream;
+
+            var streamInfo = new StreamInfo(streamName, "Markers", 1, 0, channel_format_t.cf_int64, Guid.NewGuid().ToString());
+            streamOutlet = new StreamOutlet(streamInfo);
+
             videoWriter = new VideoWriter(
                 fileName,
                 FourCC.H264,
                 30,
                 new OpenCvSharp.Size(640, 480),
                 true);
-            // reset the frameindex
-            frameIndex = 0;
 
-            if (!videoWriter.IsOpened())
-            {
-                MessageBox.Show("Failed to open video file for writing.");
-                isStreaming = false;
-            }
+            capture = new VideoCapture(cameraIndex);
+            OutputForm = new CameraOutputForm();
+
+            cts = new CancellationTokenSource();
+            captureTask = Task.Run(() => CaptureLoopAsync(cts.Token));
         }
 
         /// <summary>
-        /// Stops and disposes the current video writer.
+        /// Begin recording to file and LSL.
         /// </summary>
-        private void StopRecording()
+        public void StartRecording()
         {
-            videoWriter?.Release();
-            videoWriter?.Dispose();
-            videoWriter = null;
-            isStreaming = false;
-        }
-
-        /// <summary>
-        /// Displays incoming video frames and optionally writes them to file.
-        /// </summary>
-        /// <param name="frame">The OpenCV frame received from camera</param>
-        /// <param name="cameraOutputForm">Form where frame is displayed</param>
-        private void OnFrameReady(Mat frame, CameraOutputForm cameraOutputForm)
-        {
-            if (InvokeRequired)
+            if (!videoWriter.IsOpened() || !capture.IsOpened())
             {
-                Invoke(new Action(() => OnFrameReady(frame, cameraOutputForm)));
+                MessageBox.Show($"Failed to start session for camera {cameraIndex}.");
                 return;
             }
-            // Clone frame so we can annotate it without affecting LSL data
-            var annotatedFrame = frame.Clone();
+            recording = true;
+        }
 
-            if (isStreaming && videoWriter is not null)
-            {
-                // 1. Draw the frame number on the video
-                Cv2.PutText(
-                    annotatedFrame,
-                    $"Frame: {frameIndex}",
-                    new OpenCvSharp.Point(10, 30),
-                    HersheyFonts.HersheySimplex,
-                    1.0,
-                    Scalar.Green,
-                    2
-                );
+        /// <summary>
+        /// Stop recording and release all resources.
+        /// </summary>
+        public void Stop()
+        {
+            running = false;
+            capture.Release();
+            videoWriter.Release();
+            streamOutlet.Close();
+            OutputForm?.Invoke(() => OutputForm.Close());
+        }
 
-                // 2. Write annotated frame to video
-                videoWriter.Write(annotatedFrame);
-                frameIndex++;
-            }
-            var bitmap = BitmapConverter.ToBitmap(annotatedFrame);
-            cameraOutputForm.pictureBox1.Image?.Dispose();
-            cameraOutputForm.pictureBox1.Image = bitmap;
-            if (streamOutlet is not null) 
-            foreach (var outlet in streamOutlet)
+        /// <summary>
+        /// Capture loop: updates preview and optionally records and streams.
+        /// </summary>
+        private async Task CaptureLoopAsync(CancellationToken token)
+        {
+            using var frame = new Mat();
+
+            while (!token.IsCancellationRequested)
             {
-                    // 3. Send the frameIndex to LSL
-                    outlet.push_sample((int[])[frameIndex]);
+                capture.Read(frame);
+                if (frame.Empty())
+                {
+                    await Task.Delay(10, token);  // avoid busy looping
+                    continue;
+                }
+
+                // If recording, write to file and send LSL marker
+                if (recording)
+                {
+                    // Draw frame index
+                    Cv2.PutText(frame, $"{frameIndex}", new OpenCvSharp.Point(10, 30),
+                        HersheyFonts.HersheySimplex, 1, Scalar.Red, 2);
+                    videoWriter.Write(frame);
+                    streamOutlet.push_sample(new int[] { frameIndex });
+                    frameIndex++;
+                }
+
+                // Show frame in UI
+                var bmp = BitmapConverter.ToBitmap(frame);
+                OutputForm?.pictureBox1?.Invoke(() =>
+                {
+                    OutputForm.pictureBox1.Image?.Dispose();
+                    OutputForm.pictureBox1.Image = bmp;
+                });
+
+
+                // Optional throttle to reduce CPU, adjust if needed
+                await Task.Delay(1, token);
             }
         }
+
     }
 }
