@@ -126,7 +126,7 @@ namespace TimeShot
 
                 cameraSessions.Clear();
                 CreateStreamButton.Enabled = true;
-                StreamButton.Enabled = true;
+                StreamButton.Enabled = false;
                 StopButton.Text = "Exit TimeShot";
             }
             else
@@ -243,40 +243,42 @@ namespace TimeShot
         /// <summary>
         /// Stop recording and release all resources.
         /// </summary>
+        /// <summary>
+        /// Stops the recording process and releases associated resources. 
+        /// This method cancels the capture loop, disables recording, and 
+        /// ensures resources are released. It does not block the UI thread.
+        /// </summary>
         public void Stop()
         {
-            // Flag to indicate we want to stop the recording
+            // Set the recording flag to false — this ensures no further frames are written.
             recording = false;
 
-            // Cancel the task
+            // Request cancellation of the capture loop.
             cts?.Cancel();
 
-            // Allow asynchronous handling of the task's completion
-            if (captureTask != null)
+            // Do not use captureTask.Wait() — it would block the main thread.
+            // Instead, allow the capture loop to gracefully exit on its own.
+
+            // Release OpenCV resources — safe to call even if already released.
+            capture?.Release();
+            videoWriter?.Release();
+
+            // Close the LSL outlet — no more samples will be sent.
+            streamOutlet?.Close();
+
+            // Close the output form from the UI thread, if it exists.
+            OutputForm?.Invoke(() =>
             {
-                try
-                {
-                    // Await task completion and ensure proper cleanup after cancellation
-                    captureTask = captureTask.ContinueWith(t =>
-                    {
-                        // Safely release resources and close the output form
-                        capture.Release();
-                        videoWriter.Release();
-                        streamOutlet.Close();
+                OutputForm?.Close();
+            });
 
-                        OutputForm?.Invoke(() => OutputForm.Close());
-                    });
-                }
-                catch (Exception ex)
-                {
-                    // Log or handle any exceptions that may arise when stopping the task
-                    Console.WriteLine("Error stopping the task: " + ex.Message);
-                }
-            }
+            // Nullify the cancellation token source so it can be recreated on next start.
+            cts = null;
 
-            // Ensure cancellation has been completed
-            //captureTask?.Wait();
+            // Nullify the capture task to indicate it's no longer running.
+            captureTask = null;
         }
+
 
 
         /// <summary>

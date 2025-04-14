@@ -119,6 +119,11 @@
             <summary>
             Stop recording and release all resources.
             </summary>
+            <summary>
+            Stops the recording process and releases associated resources. 
+            This method cancels the capture loop, disables recording, and 
+            ensures resources are released. It does not block the UI thread.
+            </summary>
         </member>
         <member name="M:TimeShot.CameraFrameStreamer.CaptureLoopAsync(System.Threading.CancellationToken)">
             <summary>
