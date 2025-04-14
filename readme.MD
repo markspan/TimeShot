@@ -11,8 +11,6 @@
 - **LSL integration**: Sends frame indices as markers over LSL for each recorded frame.
 - **Visual frame indexing**: Each recorded frame is annotated with its frame number.
 - **User-friendly GUI**: Built with MaterialSkin for a modern look and feel.
-- **Graceful shutdown**: Prompts for confirmation before stopping a recording to avoid data loss.
-- **Task-based concurrency**: Modern, responsive asynchronous design using `Task` and `CancellationToken`.
 
 ## Technologies Used
 
@@ -20,7 +18,6 @@
 - **C# WinForms**
 - **[OpenCvSharp](https://github.com/shimat/opencvsharp)** (for camera and video handling)
 - **[LSL-CSharp](https://github.com/sccn/liblsl-CSharp)** (for marker streaming)
-- **MaterialSkin** (for a modern UI look)
 
 ## Installation
 
@@ -59,18 +56,18 @@
    - Choose an output filename for the video.
    - Toggle whether to include this camera.
 
-4. Click **â€œCreate Streamsâ€**:
+4. Click **Create Streams**:
    - This initializes the preview windows and sets up streams.
 
-5. Click **â€œStart Recordingâ€**:
+5. Click **Start Recording**:
    - Recording begins for all selected cameras.
    - Each frame is saved to a local `.mp4` file and a marker with the current frame index is sent over LSL.
 
-6. Click **â€œStop Recordingâ€**:
+6. Click **Stop Recording**:
    - You'll be asked to confirm before stopping.
    - All streams and previews are gracefully closed.
 
-7. Click **â€œExit TimeShotâ€** to quit if no recording is active.
+7. Click **Exit TimeShot** to quit if no recording is active.
 
 ## Example Use Case
 
@@ -82,24 +79,10 @@ Suppose you are recording behavioral data using two webcams and an EEG cap. You 
 
 ## Development
 
-### Project Structure
-
-- `MainForm.cs` â€“ Handles UI logic and session orchestration.
-- `CameraInfo.cs` â€“ Custom UI control representing a camera entry.
-- `CameraSession.cs` â€“ Manages the lifecycle of a camera session.
-- `CameraFrameStreamer.cs` â€“ Handles video capture, frame writing, LSL streaming, and preview.
 
 ### Key Concepts
 
-- `CameraFrameStreamer` uses an async `CaptureLoopAsync()` Task per camera for responsiveness.
 - LSL is only used when recording; no unnecessary traffic during previews.
-- Cancellation is handled using `CancellationTokenSource` and clean resource disposal.
-
-## Troubleshooting
-
-- **Preview doesn't show**: Ensure the camera is not in use by another application.
-- **No LSL stream detected**: Use the [LabRecorder](https://github.com/sccn/labstreaminglayer) or `lslview` to monitor active streams.
-- **Video not saving**: Ensure write permissions to the working directory.
 
 ## Contributing
 
@@ -107,9 +90,7 @@ Pull requests and issues are welcome!
 
 ### Suggestions
 
-- Add configurable frame rates and resolutions.
 - Enable audio recording from selected microphones.
-- Export session metadata (e.g., timestamps, camera info).
 
 ## License
 
