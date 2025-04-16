@@ -88,9 +88,7 @@ Suppose you are recording behavioral data using two webcams and an EEG cap. You 
 
 Pull requests and issues are welcome!
 
-### Suggestions
-
-- Enable audio recording from selected microphones.
+[This](https://github.com/markspan/MovieMerger) might be used to merge audio and video...
 
 ## License
 
