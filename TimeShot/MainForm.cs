@@ -85,10 +85,10 @@ namespace TimeShot
         /// </summary>
         private void StreamButton_Click(object sender, EventArgs e)
         {
-            foreach (var session in cameraSessions)
-                session.Start();
-
             StreamButton.Enabled = false;
+            foreach (var session in cameraSessions)
+                session.Start(WaitForConsumers.CheckState);
+
             StopButton.Text = "Stop Recording";
         }
 
@@ -159,7 +159,7 @@ namespace TimeShot
         /// <summary>
         /// Start recording.
         /// </summary>
-        public void Start() => frameStreamer.StartRecording();
+        public void Start(CheckState cs) => frameStreamer.StartRecording(cs);
 
         /// <summary>
         /// Stop recording.
@@ -205,7 +205,7 @@ namespace TimeShot
             fileName = file;
             streamName = stream;
 
-            var streamInfo = new StreamInfo(streamName, "Markers", 1, 0, channel_format_t.cf_int64, Guid.NewGuid().ToString());
+            var streamInfo = new StreamInfo(streamName, "Markers", 1, 0, channel_format_t.cf_string, Guid.NewGuid().ToString());
             streamOutlet = new StreamOutlet(streamInfo);
 
             videoWriter = new VideoWriter(
@@ -230,9 +230,13 @@ namespace TimeShot
         /// <summary>
         /// Begin recording to file and LSL.
         /// </summary>
-        public void StartRecording()
+        public void StartRecording(CheckState cs)
         {
-            if (!videoWriter.IsOpened() || !capture.IsOpened())
+            bool hasConsumers = true;
+            if (cs == CheckState.Checked)
+                hasConsumers = streamOutlet.wait_for_consumers(1200); // Wait for 1200 seconds (20 minutes)
+
+            if (!videoWriter.IsOpened() || !capture.IsOpened() || !hasConsumers)
             {
                 MessageBox.Show($"Failed to start session for camera {cameraIndex}.");
                 return;
@@ -305,7 +309,8 @@ namespace TimeShot
                     Cv2.PutText(frame, $"{frameIndex}", new OpenCvSharp.Point(10, 30),
                         HersheyFonts.HersheySimplex, 1, Scalar.Red, 2);
                     videoWriter.Write(frame);
-                    streamOutlet.push_sample(new int[] { frameIndex });
+                    
+                    streamOutlet.push_sample([frameIndex.ToString()]);
                     frameIndex++;
                 }
 

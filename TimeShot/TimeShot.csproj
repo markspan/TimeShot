@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+	<PublishReadyToRun>true</PublishReadyToRun>
     <ApplicationIcon>TimeShot.ico</ApplicationIcon>
     <PackageIcon>TimeShot.png</PackageIcon>
   </PropertyGroup>

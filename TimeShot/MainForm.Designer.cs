@@ -36,6 +36,7 @@
             CreateStreamButton = new MaterialSkin.Controls.MaterialButton();
             StreamButton = new MaterialSkin.Controls.MaterialButton();
             StopButton = new MaterialSkin.Controls.MaterialButton();
+            WaitForConsumers = new MaterialSkin.Controls.MaterialCheckbox();
             SuspendLayout();
             // 
             // CamerasLabel
@@ -159,11 +160,28 @@
             StopButton.UseVisualStyleBackColor = true;
             StopButton.Click += StopButton_Click;
             // 
+            // WaitForConsumers
+            // 
+            WaitForConsumers.AutoSize = true;
+            WaitForConsumers.Depth = 0;
+            WaitForConsumers.Location = new Point(315, 314);
+            WaitForConsumers.Margin = new Padding(0);
+            WaitForConsumers.MouseLocation = new Point(-1, -1);
+            WaitForConsumers.MouseState = MaterialSkin.MouseState.HOVER;
+            WaitForConsumers.Name = "WaitForConsumers";
+            WaitForConsumers.ReadOnly = false;
+            WaitForConsumers.Ripple = true;
+            WaitForConsumers.Size = new Size(67, 37);
+            WaitForConsumers.TabIndex = 9;
+            WaitForConsumers.Text = "Wait";
+            WaitForConsumers.UseVisualStyleBackColor = true;
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(601, 360);
+            Controls.Add(WaitForConsumers);
             Controls.Add(StopButton);
             Controls.Add(StreamButton);
             Controls.Add(CreateStreamButton);
@@ -173,6 +191,7 @@
             Controls.Add(NameLabel);
             Controls.Add(CamerasLabel);
             Name = "MainForm";
+            Sizable = false;
             Text = "TimeShot";
             ResumeLayout(false);
             PerformLayout();
@@ -188,5 +207,6 @@
         private MaterialSkin.Controls.MaterialButton CreateStreamButton;
         private MaterialSkin.Controls.MaterialButton StreamButton;
         private MaterialSkin.Controls.MaterialButton StopButton;
+        private MaterialSkin.Controls.MaterialCheckbox WaitForConsumers;
     }
 }

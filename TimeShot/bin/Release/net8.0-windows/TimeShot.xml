@@ -80,7 +80,7 @@
             Represents a single camera session.
             </summary>
         </member>
-        <member name="M:TimeShot.CameraSession.Start">
+        <member name="M:TimeShot.CameraSession.Start(System.Windows.Forms.CheckState)">
             <summary>
             Start recording.
             </summary>
@@ -110,7 +110,7 @@
             Initializes the frame streamer and dynamically sets the form size based on capture resolution.
             </summary>
         </member>
-        <member name="M:TimeShot.CameraFrameStreamer.StartRecording">
+        <member name="M:TimeShot.CameraFrameStreamer.StartRecording(System.Windows.Forms.CheckState)">
             <summary>
             Begin recording to file and LSL.
             </summary>
