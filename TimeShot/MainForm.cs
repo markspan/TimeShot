@@ -34,6 +34,7 @@ namespace TimeShot
             for (int i = 0; i < 10; i++)
             {
                 using var capture = new VideoCapture(i);
+                capture.Set(VideoCaptureProperties.BufferSize, 1); // Set buffer size to 1
                 if (capture.IsOpened())
                 {
                     CameraInfo cam = new();
