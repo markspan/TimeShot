@@ -217,6 +217,7 @@ namespace TimeShot
                 true);
 
             capture = new VideoCapture(cameraIndex);
+            capture.Set(VideoCaptureProperties.BufferSize, 1); // Set buffer size to 1
             OutputForm = new CameraOutputForm();
 
             // Get actual camera resolution for dynamic form size adjustment
