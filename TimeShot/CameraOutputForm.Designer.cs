@@ -37,7 +37,7 @@
             pictureBox1.Dock = DockStyle.Fill;
             pictureBox1.Location = new Point(0, 0);
             pictureBox1.Name = "pictureBox1";
-            pictureBox1.Size = new Size(800, 450);
+            pictureBox1.Size = new Size(640, 480);
             pictureBox1.TabIndex = 0;
             pictureBox1.TabStop = false;
             // 
@@ -45,11 +45,15 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 450);
+            ClientSize = new Size(640, 480);
             ControlBox = false;
             Controls.Add(pictureBox1);
+            FormBorderStyle = FormBorderStyle.FixedSingle;
+            MaximizeBox = false;
             Name = "CameraOutputForm";
-            Text = "CameraOutputForm";
+            Text = "Camera Output";
+            DoubleClick += CameraOutputForm_DoubleClick;
+            MouseDoubleClick += CameraOutputForm_MouseDoubleClick;
             ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();
             ResumeLayout(false);
         }

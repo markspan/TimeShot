@@ -16,5 +16,15 @@ namespace TimeShot
         {
             InitializeComponent();
         }
+
+        private void CameraOutputForm_MouseDoubleClick(object sender, MouseEventArgs e)
+        {
+
+        }
+
+        private void CameraOutputForm_DoubleClick(object sender, EventArgs e)
+        {
+
+        }
     }
 }
