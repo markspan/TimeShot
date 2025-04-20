@@ -1,6 +1,6 @@
 # TimeShot
 
-**TimeShot** is a Windows desktop application designed for synchronized multi-camera video capture with real-time LabStreamingLayer (LSL) integration. It allows users to record video from multiple USB cameras while simultaneously sending frame-accurate markers over LSL for synchronization in experimental setups (e.g., EEG, eye-tracking, behavioral experiments).
+**TimeShot** is a Windows desktop application designed for synchronized multi-camera video capture with real-time LabStreamingLayer (LSL) integration. It allows users to record video from multiple USB cameras while simultaneously sending frame-accurate indices over LSL for synchronization in experimental setups (e.g., EEG, eye-tracking, behavioral experiments).
 
 ## Features
 
@@ -8,7 +8,7 @@
 - **Customizable**: Each camera has its own filename, stream name, and preview.
 - **Real-time previews**: Each video stream is shown in a live preview window.
 - **Synchronized recording**: Start recording from all selected cameras simultaneously.
-- **LSL integration**: Sends frame indices as markers over LSL for each recorded frame.
+- **LSL integration**: Sends frame indices as indices over LSL for each recorded frame.
 - **Visual frame indexing**: Each recorded frame is annotated with its frame number.
 - **User-friendly GUI**: Built with MaterialSkin for a modern look and feel.
 
@@ -16,8 +16,8 @@
 
 - **.NET 8**
 - **C# WinForms**
-- **[OpenCvSharp](https://github.com/shimat/opencvsharp)** (for camera and video handling)
-- **[LSL-CSharp](https://github.com/sccn/liblsl-CSharp)** (for marker streaming)
+ **[OpenCvSharp](https://github.com/shimat/opencvsharp)** (for camera and video handling)
+ **[LSL-CSharp](https://github.com/sccn/liblsl-CSharp)** (for marker streaming)
 
 ## Installation
 
@@ -49,7 +49,7 @@
 
 1. **Launch the application.**
 
-2. The application will auto-detect available USB cameras (up to 10).
+2. The application will auto-detect available USB cameras.
 
 3. For each detected camera:
    - Customize the stream name (used in LSL).
