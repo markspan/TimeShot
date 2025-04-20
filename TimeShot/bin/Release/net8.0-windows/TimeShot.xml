@@ -4,6 +4,53 @@
         <name>TimeShot</name>
     </assembly>
     <members>
+        <member name="T:TimeShot.CameraFrameStreamer">
+            <summary>
+            Captures and streams frames from a camera device.
+            </summary>
+        </member>
+        <member name="P:TimeShot.CameraFrameStreamer.OutputForm">
+            <summary>
+            Gets the output form associated with this frame streamer.
+            </summary>
+        </member>
+        <member name="P:TimeShot.CameraFrameStreamer.IsRecording">
+            <summary>
+            Indicates whether recording is active.
+            </summary>
+        </member>
+        <member name="M:TimeShot.CameraFrameStreamer.#ctor(System.Int32,System.String,System.String,TimeShot.CameraOutputForm)">
+            <summary>
+            Initializes the frame streamer and dynamically sets the form size based on capture resolution.
+            </summary>
+            <param name="index">The index of the camera to use.</param>
+            <param name="file">The file name to write the video to.</param>
+            <param name="stream">The name of the LSL stream.</param>
+            <param name="outputForm">The output form to display the video frames.</param>
+        </member>
+        <member name="M:TimeShot.CameraFrameStreamer.StartRecordingAsync(System.Windows.Forms.CheckState)">
+            <summary>
+            Begin recording to file and LSL.
+            </summary>
+            <param name="cs">The check state indicating whether to wait for consumers.</param>
+        </member>
+        <member name="M:TimeShot.CameraFrameStreamer.Stop">
+            <summary>
+            Stop recording and release all resources.
+            </summary>
+        </member>
+        <member name="M:TimeShot.CameraFrameStreamer.CaptureLoopAsync(System.Threading.CancellationToken)">
+            <summary>
+            Capture loop: updates preview and optionally records and streams.
+            </summary>
+            <param name="token">Cancellation token to stop the loop.</param>
+        </member>
+        <member name="M:TimeShot.CameraFrameStreamer.CheckConsumersPeriodically(System.Threading.CancellationToken)">
+            <summary>
+            Periodically checks for consumers and stops recording if none are found.
+            </summary>
+            <param name="token">Cancellation token to stop the checking loop.</param>
+        </member>
         <member name="F:TimeShot.CameraInfo.components">
             <summary> 
             Required designer variable.
@@ -80,9 +127,14 @@
             Represents a single camera session.
             </summary>
         </member>
-        <member name="M:TimeShot.CameraSession.Start(System.Windows.Forms.CheckState)">
+        <member name="P:TimeShot.CameraSession.OutputForm">
             <summary>
-            Start recording.
+            Gets the output form associated with this camera session.
+            </summary>
+        </member>
+        <member name="M:TimeShot.CameraSession.StartAsync(System.Windows.Forms.CheckState)">
+            <summary>
+            Start recording asynchronously.
             </summary>
         </member>
         <member name="M:TimeShot.CameraSession.Stop">
@@ -93,41 +145,6 @@
         <member name="P:TimeShot.CameraSession.IsRecording">
             <summary>
             Indicates whether the session is currently recording.
-            </summary>
-        </member>
-        <member name="T:TimeShot.CameraFrameStreamer">
-            <summary>
-            Captures and streams frames from a camera device.
-            </summary>
-        </member>
-        <member name="P:TimeShot.CameraFrameStreamer.IsRecording">
-            <summary>
-            Indicates whether recording is active.
-            </summary>
-        </member>
-        <member name="M:TimeShot.CameraFrameStreamer.#ctor(System.Int32,System.String,System.String)">
-            <summary>
-            Initializes the frame streamer and dynamically sets the form size based on capture resolution.
-            </summary>
-        </member>
-        <member name="M:TimeShot.CameraFrameStreamer.StartRecording(System.Windows.Forms.CheckState)">
-            <summary>
-            Begin recording to file and LSL.
-            </summary>
-        </member>
-        <member name="M:TimeShot.CameraFrameStreamer.Stop">
-            <summary>
-            Stop recording and release all resources.
-            </summary>
-            <summary>
-            Stops the recording process and releases associated resources. 
-            This method cancels the capture loop, disables recording, and 
-            ensures resources are released. It does not block the UI thread.
-            </summary>
-        </member>
-        <member name="M:TimeShot.CameraFrameStreamer.CaptureLoopAsync(System.Threading.CancellationToken)">
-            <summary>
-            Capture loop: updates preview and optionally records and streams.
             </summary>
         </member>
         <member name="M:TimeShot.Program.Main">

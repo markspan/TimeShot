@@ -62,7 +62,7 @@
             CamName.MouseState = MaterialSkin.MouseState.OUT;
             CamName.Multiline = false;
             CamName.Name = "CamName";
-            CamName.Size = new Size(141, 50);
+            CamName.Size = new Size(304, 50);
             CamName.TabIndex = 1;
             CamName.Text = "";
             CamName.TrailingIcon = null;
@@ -74,12 +74,12 @@
             FileName.Depth = 0;
             FileName.Font = new Font("Roboto", 16F, FontStyle.Regular, GraphicsUnit.Pixel);
             FileName.LeadingIcon = null;
-            FileName.Location = new Point(240, 0);
+            FileName.Location = new Point(403, 0);
             FileName.MaxLength = 50;
             FileName.MouseState = MaterialSkin.MouseState.OUT;
             FileName.Multiline = false;
             FileName.Name = "FileName";
-            FileName.Size = new Size(163, 50);
+            FileName.Size = new Size(304, 50);
             FileName.TabIndex = 2;
             FileName.Text = "";
             FileName.TrailingIcon = null;
@@ -91,12 +91,12 @@
             StreamName.Depth = 0;
             StreamName.Font = new Font("Roboto", 16F, FontStyle.Regular, GraphicsUnit.Pixel);
             StreamName.LeadingIcon = null;
-            StreamName.Location = new Point(409, 0);
+            StreamName.Location = new Point(713, 0);
             StreamName.MaxLength = 50;
             StreamName.MouseState = MaterialSkin.MouseState.OUT;
             StreamName.Multiline = false;
             StreamName.Name = "StreamName";
-            StreamName.Size = new Size(149, 50);
+            StreamName.Size = new Size(304, 50);
             StreamName.TabIndex = 3;
             StreamName.Text = "";
             StreamName.TrailingIcon = null;
@@ -110,7 +110,7 @@
             Controls.Add(CamName);
             Controls.Add(Check);
             Name = "CameraInfo";
-            Size = new Size(567, 53);
+            Size = new Size(1024, 53);
             ResumeLayout(false);
             PerformLayout();
         }

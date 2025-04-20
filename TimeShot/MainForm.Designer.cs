@@ -68,7 +68,7 @@
             FileLabel.AutoSize = true;
             FileLabel.Depth = 0;
             FileLabel.Font = new Font("Roboto", 14F, FontStyle.Regular, GraphicsUnit.Pixel);
-            FileLabel.Location = new Point(256, 75);
+            FileLabel.Location = new Point(421, 75);
             FileLabel.MouseState = MaterialSkin.MouseState.HOVER;
             FileLabel.Name = "FileLabel";
             FileLabel.Size = new Size(26, 19);
@@ -80,7 +80,7 @@
             StreamLabel.AutoSize = true;
             StreamLabel.Depth = 0;
             StreamLabel.Font = new Font("Roboto", 14F, FontStyle.Regular, GraphicsUnit.Pixel);
-            StreamLabel.Location = new Point(425, 75);
+            StreamLabel.Location = new Point(709, 75);
             StreamLabel.MouseState = MaterialSkin.MouseState.HOVER;
             StreamLabel.Name = "StreamLabel";
             StreamLabel.Size = new Size(52, 19);
@@ -97,7 +97,7 @@
             CameraBox.MouseState = MaterialSkin.MouseState.HOVER;
             CameraBox.Name = "CameraBox";
             CameraBox.Padding = new Padding(14);
-            CameraBox.Size = new Size(586, 204);
+            CameraBox.Size = new Size(1024, 204);
             CameraBox.TabIndex = 5;
             // 
             // CreateStreamButton
@@ -125,6 +125,7 @@
             StreamButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             StreamButton.Density = MaterialSkin.Controls.MaterialButton.MaterialButtonDensity.Default;
             StreamButton.Depth = 0;
+            StreamButton.Enabled = false;
             StreamButton.HighEmphasis = true;
             StreamButton.Icon = null;
             StreamButton.Location = new Point(161, 315);
@@ -147,7 +148,7 @@
             StopButton.Depth = 0;
             StopButton.HighEmphasis = true;
             StopButton.Icon = null;
-            StopButton.Location = new Point(434, 315);
+            StopButton.Location = new Point(909, 313);
             StopButton.Margin = new Padding(4, 6, 4, 6);
             StopButton.MouseState = MaterialSkin.MouseState.HOVER;
             StopButton.Name = "StopButton";
@@ -180,7 +181,7 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(601, 360);
+            ClientSize = new Size(1037, 368);
             Controls.Add(WaitForConsumers);
             Controls.Add(StopButton);
             Controls.Add(StreamButton);

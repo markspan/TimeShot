@@ -3,11 +3,26 @@ using LSL;                      // labstreaminglayer
 using OpenCvSharp;              // for videocapture and videowriter
 using OpenCvSharp.Extensions;
 using System.DirectoryServices;   // for bitmapconverter
+using DirectShowLib;
 
 namespace TimeShot
 {
+
     public partial class MainForm : MaterialForm
     {
+        public static List<string> GetCameraNames()
+        {
+            var cameraNames = new List<string>();
+
+            DsDevice[] systemCameras = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
+            foreach (DsDevice cam in systemCameras)
+            {
+                cameraNames.Add(cam.Name);
+            }
+
+            return cameraNames;
+        }
+
         readonly MaterialSkin.MaterialSkinManager materialSkinManager;
         private readonly List<CameraSession> cameraSessions = new();
 
@@ -31,23 +46,27 @@ namespace TimeShot
         /// </summary>
         private void GetAvailableCameras()
         {
-            for (int i = 0; i < 10; i++)
+            var cameraNames = GetCameraNames();
+
+            for (int i = 0; i < cameraNames.Count; i++)
             {
                 using var capture = new VideoCapture(i);
-                capture.Set(VideoCaptureProperties.BufferSize, 1); // Set buffer size to 1
+                capture.Set(VideoCaptureProperties.BufferSize, 1);
+
                 if (capture.IsOpened())
                 {
                     CameraInfo cam = new();
                     cam.Check.Checked = true;
-                    cam.CamName.Text = $"Camera {i}";
-                    cam.FileName.Text = $"Cam{i}.mp4";
-                    cam.StreamName.Text = $"Cam{i}_Stream";
-                    cam.Size = new System.Drawing.Size(569, 52);
+                    cam.CamName.Text = cameraNames[i]; // Use the friendly name!
+                    cam.FileName.Text = $"{cameraNames[i].Replace(" ", "_")}.mp4";
+                    cam.StreamName.Text = $"{cameraNames[i].Replace(" ", "_")}_Stream";
+                    cam.Size = new System.Drawing.Size(1024, 52);
                     cam.Location = new System.Drawing.Point(9, 3 + (54 * i));
                     CameraBox.Controls.Add(cam);
                 }
             }
         }
+
 
         /// <summary>
         /// Create camera sessions and preview windows for selected cameras.
@@ -84,14 +103,16 @@ namespace TimeShot
         /// <summary>
         /// Start recording for all active camera sessions.
         /// </summary>
-        private void StreamButton_Click(object sender, EventArgs e)
+        private async void StreamButton_Click(object sender, EventArgs e)
         {
             StreamButton.Enabled = false;
             foreach (var session in cameraSessions)
-                session.Start(WaitForConsumers.CheckState);
-
+            {
+                await session.StartAsync(WaitForConsumers.CheckState);
+            }
             StopButton.Text = "Stop Recording";
         }
+
 
         /// <summary>
         /// Stop button with contextual behavior: stop recording, close streams, or exit.
@@ -121,9 +142,9 @@ namespace TimeShot
             else if (cameraSessions.Count > 0)
             {
                 // Case 2: Stop previews (no recording yet)
-                foreach (var session in cameraSessions) 
+                foreach (var session in cameraSessions)
                     session.Stop();
-                    
+
 
                 cameraSessions.Clear();
                 CreateStreamButton.Enabled = true;
@@ -139,9 +160,24 @@ namespace TimeShot
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            foreach (var session in cameraSessions)
-                session.Stop();
+            try
+            {
+                foreach (var session in cameraSessions)
+                {
+                    session.Stop();
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                // Handle task cancellation gracefully
+            }
+            catch (Exception ex)
+            {
+                // Handle other potential exceptions
+                MessageBox.Show($"An error occurred while closing the application: {ex.Message}");
+            }
         }
+
     }
 
     /// <summary>
@@ -150,17 +186,22 @@ namespace TimeShot
     public class CameraSession
     {
         private readonly CameraFrameStreamer frameStreamer;
+
+        /// <summary>
+        /// Gets the output form associated with this camera session.
+        /// </summary>
         public CameraOutputForm OutputForm => frameStreamer.OutputForm;
 
         public CameraSession(int index, string file, string stream)
         {
-            frameStreamer = new CameraFrameStreamer(index, file, stream);
+            var outputForm = new CameraOutputForm(); // Instantiate the output form
+            frameStreamer = new CameraFrameStreamer(index, file, stream, outputForm);
         }
 
         /// <summary>
-        /// Start recording.
+        /// Start recording asynchronously.
         /// </summary>
-        public void Start(CheckState cs) => frameStreamer.StartRecording(cs);
+        public async Task StartAsync(CheckState cs) => await frameStreamer.StartRecordingAsync(cs);
 
         /// <summary>
         /// Stop recording.
@@ -171,163 +212,5 @@ namespace TimeShot
         /// Indicates whether the session is currently recording.
         /// </summary>
         public bool IsRecording => frameStreamer.IsRecording;
-    }
-
-    /// <summary>
-    /// Captures and streams frames from a camera device.
-    /// </summary>
-    public class CameraFrameStreamer
-    {
-        private readonly int cameraIndex;
-        private readonly string fileName;
-        private readonly string streamName;
-        private readonly StreamOutlet streamOutlet;
-        private readonly VideoWriter videoWriter;
-        private readonly VideoCapture capture;
-        private Task? captureTask;
-        private CancellationTokenSource? cts;
-        private bool recording = false;
-        private bool running = true;
-        private int frameIndex = 0;
-
-        public CameraOutputForm OutputForm { get; private set; }
-
-        /// <summary>
-        /// Indicates whether recording is active.
-        /// </summary>
-        public bool IsRecording => recording;
-
-        /// <summary>
-        /// Initializes the frame streamer and dynamically sets the form size based on capture resolution.
-        /// </summary>
-        public CameraFrameStreamer(int index, string file, string stream)
-        {
-            cameraIndex = index;
-            fileName = file;
-            streamName = stream;
-
-            var streamInfo = new StreamInfo(streamName, "Markers", 1, 0, channel_format_t.cf_string, Guid.NewGuid().ToString());
-            streamOutlet = new StreamOutlet(streamInfo);
-
-            videoWriter = new VideoWriter(
-                fileName,
-                FourCC.H264,
-                30,
-                new OpenCvSharp.Size(640, 480),
-                true);
-
-            capture = new VideoCapture(cameraIndex);
-            capture.Set(VideoCaptureProperties.BufferSize, 1); // Set buffer size to 1
-            OutputForm = new CameraOutputForm();
-
-            // Get actual camera resolution for dynamic form size adjustment
-            var cameraWidth = (int)capture.Get(3);
-            var cameraHeight = (int)capture.Get(4);
-            OutputForm.Size = new System.Drawing.Size(cameraWidth, cameraHeight);
-
-            cts = new CancellationTokenSource();
-            captureTask = Task.Run(() => CaptureLoopAsync(cts.Token));
-        }
-
-        /// <summary>
-        /// Begin recording to file and LSL.
-        /// </summary>
-        public void StartRecording(CheckState cs)
-        {
-            bool hasConsumers = true;
-            if (cs == CheckState.Checked)
-                hasConsumers = streamOutlet.wait_for_consumers(1200); // Wait for 1200 seconds (20 minutes)
-
-            if (!videoWriter.IsOpened() || !capture.IsOpened() || !hasConsumers)
-            {
-                MessageBox.Show($"Failed to start session for camera {cameraIndex}.");
-                return;
-            }
-            recording = true;
-        }
-
-        /// <summary>
-        /// Stop recording and release all resources.
-        /// </summary>
-        /// <summary>
-        /// Stops the recording process and releases associated resources. 
-        /// This method cancels the capture loop, disables recording, and 
-        /// ensures resources are released. It does not block the UI thread.
-        /// </summary>
-        public void Stop()
-        {
-            // Set the recording flag to false — this ensures no further frames are written.
-            recording = false;
-
-            // Request cancellation of the capture loop.
-            cts?.Cancel();
-
-            // Do not use captureTask.Wait() — it would block the main thread.
-            // Instead, allow the capture loop to gracefully exit on its own.
-
-            // Release OpenCV resources — safe to call even if already released.
-            capture?.Release();
-            videoWriter?.Release();
-
-            // Close the LSL outlet — no more samples will be sent.
-            streamOutlet?.Close();
-
-            // Close the output form from the UI thread, if it exists.
-            OutputForm?.Invoke(() =>
-            {
-                OutputForm?.Close();
-            });
-
-            // Nullify the cancellation token source so it can be recreated on next start.
-            cts = null;
-
-            // Nullify the capture task to indicate it's no longer running.
-            captureTask = null;
-        }
-
-
-
-        /// <summary>
-        /// Capture loop: updates preview and optionally records and streams.
-        /// </summary>
-        private async Task CaptureLoopAsync(CancellationToken token)
-        {
-            using var frame = new Mat();
-
-            while (!token.IsCancellationRequested)
-            {
-                capture.Read(frame);
-                if (frame.Empty())
-                {
-                    // If frame is empty, wait briefly to avoid CPU overload
-                    await Task.Delay(10, token);
-                    continue;
-                }
-
-                // If recording, write to file and send LSL marker
-                if (recording)
-                {
-                    // Draw frame index as a marker on the frame
-                    Cv2.PutText(frame, $"{frameIndex}", new OpenCvSharp.Point(10, 30),
-                        HersheyFonts.HersheySimplex, 1, Scalar.Red, 2);
-                    videoWriter.Write(frame);
-                    
-                    streamOutlet.push_sample([frameIndex.ToString()]);
-                    frameIndex++;
-                }
-
-                // Show frame in UI
-                var bmp = BitmapConverter.ToBitmap(frame);
-                OutputForm?.pictureBox1?.Invoke(() =>
-                {
-                    OutputForm.pictureBox1.Image?.Dispose();
-                    OutputForm.pictureBox1.Image = bmp;
-                });
-
-                // Allow cancellation to be detected frequently
-                await Task.Delay(1, token);
-            }
-        }
-
     }
 }
