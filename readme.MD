@@ -1,4 +1,4 @@
-# TimeShot
+of# TimeShot
 
 **TimeShot** is a Windows desktop application designed for synchronized multi-camera video capture with real-time LabStreamingLayer (LSL) integration. It allows users to record video from multiple USB cameras while simultaneously sending frame-accurate indices over LSL for synchronization in experimental setups (e.g., EEG, eye-tracking, behavioral experiments).
 
@@ -40,7 +40,6 @@
 3. Restore NuGet packages. Required:
    - `OpenCvSharp4`
    - `OpenCvSharp4.runtime.win`
-   - `LSL-CSharp`
    - `MaterialSkin.2`
 
 4. Build and run the solution.
