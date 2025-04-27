@@ -1,4 +1,4 @@
-# TimeShot
+de# TimeShot
 
 **TimeShot** is a Windows desktop application designed for synchronized multi-camera video capture with real-time LabStreamingLayer (LSL) integration. It allows users to record video from multiple USB cameras while simultaneously sending frame-accurate indices over LSL for synchronization in experimental setups (e.g., EEG, eye-tracking, behavioral experiments).
 
@@ -29,20 +29,11 @@
 
 ### Setup
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/timeshot.git
-   cd timeshot
-   ```
+1. Download the latest release from the GitHub repo.
 
-2. Open `TimeShot.sln` in Visual Studio.
+2. Unzip.
 
-3. Restore NuGet packages. Required:
-   - `OpenCvSharp4`
-   - `OpenCvSharp4.runtime.win`
-   - `MaterialSkin.2`
-
-4. Build and run the solution.
+3. run the TimeShot.exe.
 
 ## Usage
 
@@ -61,6 +52,8 @@
 5. Click **Start Recording**:
    - Recording begins for all selected cameras.
    - Each frame is saved to a local `.mp4` file and a marker with the current frame index is sent over LSL.
+
+If the 'wait' togglebutton is ticked, the program will wait recording and streaming until the lab recorder is started.
 
 6. Click **Stop Recording**:
    - You'll be asked to confirm before stopping.
