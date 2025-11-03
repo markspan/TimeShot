@@ -46,12 +46,12 @@
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(640, 480);
-            ControlBox = false;
             Controls.Add(pictureBox1);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             Name = "CameraOutputForm";
             Text = "Camera Output";
+            FormClosing += CameraOutputForm_FormClosing;
             DoubleClick += CameraOutputForm_DoubleClick;
             MouseDoubleClick += CameraOutputForm_MouseDoubleClick;
             ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();

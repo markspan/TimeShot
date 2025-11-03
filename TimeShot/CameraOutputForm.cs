@@ -26,5 +26,15 @@ namespace TimeShot
         {
 
         }
+
+        private void CameraOutputForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            // Prevent the user from closing the form
+            if (e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                this.WindowState = FormWindowState.Minimized; // just minimize instead
+            }
+        }
     }
 }

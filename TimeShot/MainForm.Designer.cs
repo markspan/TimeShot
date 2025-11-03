@@ -37,6 +37,8 @@
             StreamButton = new MaterialSkin.Controls.MaterialButton();
             StopButton = new MaterialSkin.Controls.MaterialButton();
             WaitForConsumers = new MaterialSkin.Controls.MaterialCheckbox();
+            Session = new MaterialSkin.Controls.MaterialTextBox();
+            materialLabel1 = new MaterialSkin.Controls.MaterialLabel();
             SuspendLayout();
             // 
             // CamerasLabel
@@ -68,7 +70,7 @@
             FileLabel.AutoSize = true;
             FileLabel.Depth = 0;
             FileLabel.Font = new Font("Roboto", 14F, FontStyle.Regular, GraphicsUnit.Pixel);
-            FileLabel.Location = new Point(256, 75);
+            FileLabel.Location = new Point(293, 75);
             FileLabel.MouseState = MaterialSkin.MouseState.HOVER;
             FileLabel.Name = "FileLabel";
             FileLabel.Size = new Size(26, 19);
@@ -80,7 +82,7 @@
             StreamLabel.AutoSize = true;
             StreamLabel.Depth = 0;
             StreamLabel.Font = new Font("Roboto", 14F, FontStyle.Regular, GraphicsUnit.Pixel);
-            StreamLabel.Location = new Point(425, 75);
+            StreamLabel.Location = new Point(473, 75);
             StreamLabel.MouseState = MaterialSkin.MouseState.HOVER;
             StreamLabel.Name = "StreamLabel";
             StreamLabel.Size = new Size(52, 19);
@@ -97,7 +99,7 @@
             CameraBox.MouseState = MaterialSkin.MouseState.HOVER;
             CameraBox.Name = "CameraBox";
             CameraBox.Padding = new Padding(14);
-            CameraBox.Size = new Size(586, 204);
+            CameraBox.Size = new Size(646, 204);
             CameraBox.TabIndex = 5;
             // 
             // CreateStreamButton
@@ -147,7 +149,7 @@
             StopButton.Depth = 0;
             StopButton.HighEmphasis = true;
             StopButton.Icon = null;
-            StopButton.Location = new Point(434, 315);
+            StopButton.Location = new Point(654, 313);
             StopButton.Margin = new Padding(4, 6, 4, 6);
             StopButton.MouseState = MaterialSkin.MouseState.HOVER;
             StopButton.Name = "StopButton";
@@ -163,6 +165,8 @@
             // WaitForConsumers
             // 
             WaitForConsumers.AutoSize = true;
+            WaitForConsumers.Checked = true;
+            WaitForConsumers.CheckState = CheckState.Checked;
             WaitForConsumers.Depth = 0;
             WaitForConsumers.Location = new Point(315, 314);
             WaitForConsumers.Margin = new Padding(0);
@@ -176,11 +180,44 @@
             WaitForConsumers.Text = "Wait";
             WaitForConsumers.UseVisualStyleBackColor = true;
             // 
+            // Session
+            // 
+            Session.AnimateReadOnly = false;
+            Session.BorderStyle = BorderStyle.None;
+            Session.Depth = 0;
+            Session.Font = new Font("Microsoft Sans Serif", 12F);
+            Session.LeadingIcon = null;
+            Session.Location = new Point(669, 99);
+            Session.MaxLength = 50;
+            Session.MouseState = MaterialSkin.MouseState.OUT;
+            Session.Multiline = false;
+            Session.Name = "Session";
+            Session.Size = new Size(106, 50);
+            Session.TabIndex = 10;
+            Session.Text = "1";
+            Session.TrailingIcon = null;
+            Session.TextChanged += Session_TextChanged;
+            Session.KeyPress += Session_KeyPress;
+            // 
+            // materialLabel1
+            // 
+            materialLabel1.AutoSize = true;
+            materialLabel1.Depth = 0;
+            materialLabel1.Font = new Font("Roboto", 14F, FontStyle.Regular, GraphicsUnit.Pixel);
+            materialLabel1.Location = new Point(669, 75);
+            materialLabel1.MouseState = MaterialSkin.MouseState.HOVER;
+            materialLabel1.Name = "materialLabel1";
+            materialLabel1.Size = new Size(61, 19);
+            materialLabel1.TabIndex = 11;
+            materialLabel1.Text = "Session:";
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(601, 360);
+            ClientSize = new Size(798, 361);
+            Controls.Add(materialLabel1);
+            Controls.Add(Session);
             Controls.Add(WaitForConsumers);
             Controls.Add(StopButton);
             Controls.Add(StreamButton);
@@ -208,5 +245,7 @@
         private MaterialSkin.Controls.MaterialButton StreamButton;
         private MaterialSkin.Controls.MaterialButton StopButton;
         private MaterialSkin.Controls.MaterialCheckbox WaitForConsumers;
+        private MaterialSkin.Controls.MaterialTextBox Session;
+        private MaterialSkin.Controls.MaterialLabel materialLabel1;
     }
 }

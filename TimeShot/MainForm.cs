@@ -3,17 +3,39 @@ using LSL;                      // labstreaminglayer
 using OpenCvSharp;              // for videocapture and videowriter
 using OpenCvSharp.Extensions;
 using System.DirectoryServices;   // for bitmapconverter
-
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+using System.IO;
 namespace TimeShot
 {
     public partial class MainForm : MaterialForm
     {
         readonly MaterialSkin.MaterialSkinManager materialSkinManager;
         private readonly List<CameraSession> cameraSessions = new();
-
+        AppConfig config = new();
         public MainForm(string[] args)
         {
             InitializeComponent();
+            var exeDir = AppDomain.CurrentDomain.BaseDirectory;
+            var yamlPath = Path.Combine(exeDir, "config.yaml");
+
+            if (File.Exists(yamlPath))
+            {
+                try
+                {
+                    var yamlText = File.ReadAllText(yamlPath);
+                    var deserializer = new DeserializerBuilder()
+                        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+                        .Build();
+
+                    config = deserializer.Deserialize<AppConfig>(yamlText);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error reading YAML file:\n{ex.Message}",
+                        "Configuration Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
 
             materialSkinManager = MaterialSkin.MaterialSkinManager.Instance;
             materialSkinManager.AddFormToManage(this);
@@ -39,10 +61,17 @@ namespace TimeShot
                 {
                     CameraInfo cam = new();
                     cam.Check.Checked = true;
-                    cam.CamName.Text = $"Camera {i}";
-                    cam.FileName.Text = $"Cam{i}.mp4";
-                    cam.StreamName.Text = $"Cam{i}_Stream";
-                    cam.Size = new System.Drawing.Size(569, 52);
+                    var SessionId = Session.Text;
+                    // Replace {i} placeholders with actual index
+                    string camName = config.CameraName.Replace("{i}", i.ToString());
+                    string streamName = config.StreamName.Replace("{i}", i.ToString());
+                    string videoFile = config.VideoFile.Replace("{i}", i.ToString());
+
+                    cam.CamName.Text = camName.Replace("{s}", SessionId);
+                    cam.FileName.Text = videoFile.Replace("{s}", SessionId);
+                    cam.StreamName.Text = streamName.Replace("{s}", SessionId);
+
+                    cam.Size = new System.Drawing.Size(775, 52);
                     cam.Location = new System.Drawing.Point(9, 3 + (54 * i));
                     CameraBox.Controls.Add(cam);
                 }
@@ -121,9 +150,9 @@ namespace TimeShot
             else if (cameraSessions.Count > 0)
             {
                 // Case 2: Stop previews (no recording yet)
-                foreach (var session in cameraSessions) 
+                foreach (var session in cameraSessions)
                     session.Stop();
-                    
+
 
                 cameraSessions.Clear();
                 CreateStreamButton.Enabled = true;
@@ -142,7 +171,53 @@ namespace TimeShot
             foreach (var session in cameraSessions)
                 session.Stop();
         }
+
+        private void Session_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            // Allow control keys such as Backspace
+            if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar))
+            {
+                e.Handled = true;  // block the key
+            }
+        }
+
+        private void Session_TextChanged(object sender, EventArgs e)
+        {
+            string sessionId = Session.Text;
+
+            int i = 0;
+            foreach (Control control in CameraBox.Controls)
+            {
+                if (control is CameraInfo cam)
+                {
+                    cam.CamName.Text = config.CameraName
+                        .Replace("{i}", i.ToString())
+                        .Replace("{s}", sessionId);
+
+                    cam.StreamName.Text = config.StreamName
+                        .Replace("{i}", i.ToString())
+                        .Replace("{s}", sessionId);
+
+                    cam.FileName.Text = config.VideoFile
+                        .Replace("{i}", i.ToString())
+                        .Replace("{s}", sessionId);
+
+                    i++;
+                }
+            }
+        }
     }
+    /// <summary>
+    /// Represents a Configurationfile. The 's' parameter is the session or subject id. The {i} parameter is replaced with the camera index.
+    /// </summary>
+    public class AppConfig
+    {
+        public string CameraName { get; set; } = "Camera {i}";
+        public string StreamName { get; set; } = "Stream_{i}";
+        public string VideoFile { get; set; } = "Video_{i}.mp4";
+
+    }
+
 
     /// <summary>
     /// Represents a single camera session.
@@ -236,7 +311,7 @@ namespace TimeShot
         {
             bool hasConsumers = true;
             if (cs == CheckState.Checked)
-                hasConsumers = streamOutlet.wait_for_consumers(1200); // Wait for 1200 seconds (20 minutes)
+                hasConsumers = streamOutlet.wait_for_consumers(3600); // Wait for 3600 seconds (60 minutes)
 
             if (!videoWriter.IsOpened() || !capture.IsOpened() || !hasConsumers)
             {
@@ -309,7 +384,7 @@ namespace TimeShot
                 {
                     // Draw frame index as a marker on the frame
                     Cv2.PutText(frame, $"{frameIndex}", new OpenCvSharp.Point(10, 30),
-                        HersheyFonts.HersheySimplex, 1, Scalar.Red, 2);
+                        HersheyFonts.HersheySimplex, .75, Scalar.Red, 2);
                     videoWriter.Write(frame);
                     
                     streamOutlet.push_sample([frameIndex.ToString()]);
