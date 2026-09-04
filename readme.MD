@@ -61,7 +61,7 @@
 
 5. Click **Start Recording**:
    - Recording begins for all selected cameras.
-   - Each frame is saved to a local `.mp4` file and a marker with the current frame index is sent over LSL.
+   - Each frame is saved to a local `.avi` (MJPEG) file and a marker with the current frame index is sent over LSL.
 
 6. Click **Stop Recording**:
    - You'll be asked to confirm before stopping.

@@ -1,0 +1,5 @@
+# Default TimeShot configuration.
+# {i} is replaced with the camera index, {s} with the session/subject id entered in the UI.
+cameraName: "Camera {i}"
+streamName: "Stream_{i}"
+videoFile: "Video_{i}.avi"
