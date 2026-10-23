@@ -8,6 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
 	<PublishReadyToRun>true</PublishReadyToRun>
     <ApplicationIcon>TimeShot.ico</ApplicationIcon>
+    <!-- The release version: packaging/build.ps1 and the release workflow name and tag releases after it. -->
+    <Version>1.1.0</Version>
     <PackageIcon>TimeShot.png</PackageIcon>
   </PropertyGroup>
 	<PropertyGroup>

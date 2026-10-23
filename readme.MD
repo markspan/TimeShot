@@ -21,6 +21,12 @@
 
 ## Installation
 
+### Download
+
+Get `TimeShot-<version>-windows-x64.zip` from the [latest release](https://github.com/markspan/TimeShot/releases/latest), unzip it anywhere and run `TimeShot\TimeShot.exe`. Everything is included (the .NET runtime too), so nothing else needs installing. If Windows SmartScreen warns on the first start, choose *More info* > *Run anyway*.
+
+To build it yourself instead:
+
 ### Prerequisites
 
 - Windows 10 or higher
@@ -79,10 +85,19 @@ Suppose you are recording behavioral data using two webcams and an EEG cap. You 
 
 ## Development
 
+### Releases
+
+The **Build and release** GitHub Action (`.github/workflows/release.yml`) builds and smoke-tests the Windows release on every change, and publishes it as a GitHub release when run from the Actions tab with *publish* ticked, or when a `v<version>` tag is pushed. Before releasing, bump `<Version>` in `TimeShot/TimeShot.csproj` and update `packaging/RELEASE_NOTES.md`.
+
+To build the same zip locally, run `pwsh packaging/build.ps1` on Windows. It needs the .NET 8 SDK and Visual Studio (or its Build Tools) with the "Desktop development with C++" workload, which provides the Visual C++ runtime files that `lsl.dll` needs.
 
 ### Key Concepts
 
 - LSL is only used when recording; no unnecessary traffic during previews.
+- Each frame's marker is pushed the moment the camera delivers the frame, and LSL stamps it with its own clock right then. TimeShot never sets timestamps itself.
+- Each camera's capture loop runs on a thread of its own and only grabs frames and pushes markers. Writing the video (encoding and disk I/O) happens on a separate writer thread per camera, and the preview is updated without waiting for the UI, so neither can delay the next marker.
+- No recorded frame is ever dropped: frame N of the `.avi` always belongs to marker N. If the disk falls more than about two seconds behind, capture waits for it rather than skip frames.
+- Previews show at most 20 frames per second; recordings keep the camera's full frame rate.
 
 ## Contributing
 

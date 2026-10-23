@@ -9,9 +9,13 @@ using System.Windows.Forms;
 namespace TimeShot
 {
     /// <summary>
-    /// Captures and streams frames from a camera device: owns the OpenCV capture, the
-    /// output video file and the LSL marker outlet, and runs its own capture loop on a
-    /// background task.
+    /// Captures and streams frames from a camera device: owns the OpenCV capture, the LSL
+    /// marker outlet and, while recording, the <see cref="FrameWriter"/> of the video file.
+    /// Its capture loop runs on a dedicated thread and does as little as possible: it pushes
+    /// each frame's marker the moment the camera delivers the frame (LSL stamps it then), and
+    /// leaves writing to the frame writer's thread and painting to the UI thread, so neither
+    /// can delay the next marker. That loop is also the only place the capture and the outlet
+    /// are released, so they are never released while it may still be using them.
     /// </summary>
     public class CameraFrameStreamer
     {
@@ -19,8 +23,20 @@ namespace TimeShot
         private const int MaxWaitForConsumersSeconds = 3600;
         private const int CalibrationFrameCount = 15;
 
-        // Leaves room for the UI thread between frames.
-        private const int LoopIdleDelayMs = 1;
+        // How long Stop() waits for the capture loop to finish before closing the preview
+        // anyway. The loop still releases its resources itself once Grab() returns.
+        private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
+
+        // How long Stop() then waits for the frame writer to write its backlog and finalise
+        // the file. The backlog is bounded (see FrameWriter), so this is generous.
+        private static readonly TimeSpan WriterDrainTimeout = TimeSpan.FromSeconds(30);
+
+        // How long the capture loop pauses after the camera failed to deliver a frame. It checks
+        // for Stop() again right after, so this also bounds how long stopping waits for it.
+        private const int NoFrameRetryDelayMs = 10;
+
+        // At most 20 preview frames a second: plenty to aim a camera, and light on the UI thread.
+        private static readonly TimeSpan MinPreviewInterval = TimeSpan.FromMilliseconds(50);
 
         private readonly int cameraIndex;
         private readonly string cameraName;
@@ -28,11 +44,18 @@ namespace TimeShot
         private readonly string streamName;
         private readonly StreamOutlet streamOutlet;
         private readonly VideoCapture capture;
-        private readonly VideoWriter? videoWriter;
+        private readonly OpenCvSharp.Size captureSize;
+        private readonly double fps;
+        // Created by StartRecording(), so creating the streams never creates or truncates a file.
+        // Set once, on the UI thread; the capture loop adds the frames and completes it.
+        private volatile FrameWriter? frameWriter;
         private Task? captureTask;
         private CancellationTokenSource? cts;
         private volatile bool recording;
-        private int frameIndex;
+        // Preview throttling: the time of the last preview (capture thread only), and whether
+        // a preview frame is still on its way to the UI thread (cleared there).
+        private long lastPreviewTimestamp;
+        private volatile bool previewPending;
 
         public CameraOutputForm OutputForm { get; }
 
@@ -41,9 +64,8 @@ namespace TimeShot
 
         /// <summary>
         /// Opens the camera, measures its real delivered resolution/fps, and starts the
-        /// preview loop. Throws if the camera itself cannot be opened; a video-writer that
-        /// fails to open is tolerated here (preview still works) and reported when
-        /// <see cref="StartRecording"/> is actually called.
+        /// preview loop. Throws if the camera itself cannot be opened. The video file is not
+        /// touched here: <see cref="StartRecording"/> creates it.
         /// </summary>
         public CameraFrameStreamer(int index, string name, string file, string stream)
         {
@@ -68,9 +90,9 @@ namespace TimeShot
                 throw new InvalidOperationException($"Camera {cameraIndex} opened but delivered no frame.");
             }
 
-            var captureSize = new OpenCvSharp.Size(probeFrame.Width, probeFrame.Height);
+            captureSize = new OpenCvSharp.Size(probeFrame.Width, probeFrame.Height);
             var formSize = new System.Drawing.Size(probeFrame.Width, probeFrame.Height);
-            double fps = MeasureFps();
+            fps = MeasureFps();
 
             // Must be stable across restarts of *this* camera so a recorder can recover the
             // stream after a crash by re-finding a source with the same id (see the source_id
@@ -91,22 +113,14 @@ namespace TimeShot
 
             streamOutlet = new StreamOutlet(streamInfo);
 
-            // MJPG, not H264: OpenCV's H264 writer needs the separate OpenH264 DLL next to the
-            // exe and just silently fails to open without it (see the IsOpened() check below).
-            // MJPG ships with OpenCV's own FFmpeg backend everywhere, and -- more importantly
-            // for this tool -- every frame is independently encoded (no GOPs/B-frames), so
-            // seeking to exactly "frame N" (the join key the LSL marker stream uses) is exact.
-            //
-            // Real captured resolution/fps, not a hardcoded guess: a writer opened at the
-            // wrong size relative to what capture.Read() actually delivers corrupts frames.
-            videoWriter = new VideoWriter(fileName, FourCC.MJPG, fps, captureSize, true);
-            if (!videoWriter.IsOpened())
-                Debug.WriteLine($"CameraFrameStreamer: video writer for camera {cameraIndex} failed to open ({fileName}).");
-
             OutputForm = new CameraOutputForm { Size = formSize };
 
             cts = new CancellationTokenSource();
-            captureTask = Task.Run(() => CaptureLoopAsync(cts.Token));
+            CancellationToken token = cts.Token;
+            // LongRunning: the loop blocks in Grab() for the streamer's whole life, so it gets a
+            // thread of its own, which also lets it raise that thread's priority.
+            captureTask = Task.Factory.StartNew(() => CaptureLoop(token), CancellationToken.None,
+                TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         private double MeasureFps()
@@ -127,23 +141,34 @@ namespace TimeShot
         /// (without blocking the caller's thread) for an LSL consumer to connect, polling
         /// <see cref="StreamOutlet.have_consumers"/> so the wait can be cancelled by
         /// <see cref="Stop"/> instead of blocking on the native library's own timeout.
+        /// The video file is created only once recording really starts.
         /// </summary>
         public async Task StartRecording(CheckState cs)
         {
-            if (!capture.IsOpened() || videoWriter is not { } writer || !writer.IsOpened())
+            // Once Stop() has cancelled, the capture loop may already have closed the outlet and
+            // the camera: every step below checks the token before touching them again.
+            if (cts is not { } source || source.IsCancellationRequested)
+                return;
+            if (frameWriter is not null)
+                return; // already started: one recording, and one file, per stream
+            CancellationToken token = source.Token;
+
+            if (!capture.IsOpened())
             {
-                MessageBox.Show($"Failed to start session for camera {cameraIndex}: capture or output file not ready.");
+                MessageBox.Show($"Failed to start session for camera {cameraIndex}: the camera is not open.");
                 return;
             }
 
-            if (cs == CheckState.Checked && !streamOutlet.have_consumers())
+            if (cs == CheckState.Checked)
             {
-                CancellationToken token = cts?.Token ?? CancellationToken.None;
                 DateTime deadline = DateTime.UtcNow.AddSeconds(MaxWaitForConsumersSeconds);
                 try
                 {
-                    while (!streamOutlet.have_consumers())
+                    while (true)
                     {
+                        token.ThrowIfCancellationRequested();
+                        if (streamOutlet.have_consumers())
+                            break;
                         if (DateTime.UtcNow >= deadline)
                         {
                             MessageBox.Show($"No LSL consumer connected to camera {cameraIndex}'s stream " +
@@ -159,25 +184,43 @@ namespace TimeShot
                 }
             }
 
-            recording = true;
+            if (token.IsCancellationRequested)
+                return; // stopped meanwhile: do not create a file nobody would finalise
+
+            var writer = FrameWriter.Create(fileName, fps, captureSize);
+            if (writer is null)
+            {
+                MessageBox.Show($"Failed to start session for camera {cameraIndex}: could not create \"{fileName}\".");
+                return;
+            }
+
+            frameWriter = writer;
+            recording = true; // from the capture loop's next frame on, every frame is recorded
         }
 
         /// <summary>
-        /// Stops recording and the capture loop, then releases all resources. Waits
-        /// (bounded) for the loop to actually observe cancellation before releasing the
-        /// capture/writer it may still be using, rather than releasing them out from under it.
+        /// Stops recording and the capture loop, waits for the video file to be finalised, then
+        /// closes the preview. The loop releases the camera and the LSL outlet itself as it
+        /// exits, and completes the frame writer, which finalises the file on its own thread;
+        /// releasing them here could pull them out from under a Grab/push still in flight on
+        /// the loop's thread, which crashes in native code.
         /// </summary>
         public async Task Stop()
         {
             recording = false;
             cts?.Cancel();
 
-            if (captureTask != null)
-                await Task.WhenAny(captureTask, Task.Delay(TimeSpan.FromSeconds(2)));
-
-            capture.Release();
-            videoWriter?.Release();
-            streamOutlet.Close();
+            if (captureTask is { } loop && !await CompletesWithin(loop, StopTimeout))
+            {
+                // A camera that stopped delivering can leave Grab() blocked. The loop releases
+                // everything, and lets the writer finalise the file, as soon as it returns; the
+                // UI does not wait for that.
+                Debug.WriteLine($"CameraFrameStreamer: camera {cameraIndex} did not stop within {StopTimeout.TotalSeconds:F0}s.");
+            }
+            else if (frameWriter is { } writer && !await CompletesWithin(writer.Completion, WriterDrainTimeout))
+            {
+                Debug.WriteLine($"CameraFrameStreamer: \"{fileName}\" was not finalised within {WriterDrainTimeout.TotalSeconds:F0}s.");
+            }
 
             if (!OutputForm.IsDisposed)
             {
@@ -191,9 +234,29 @@ namespace TimeShot
             captureTask = null;
         }
 
-        private async Task CaptureLoopAsync(CancellationToken token)
+        /// <summary>Whether <paramref name="task"/> finishes within <paramref name="timeout"/>; it keeps running otherwise.</summary>
+        private static async Task<bool> CompletesWithin(Task task, TimeSpan timeout) =>
+            await Task.WhenAny(task, Task.Delay(timeout)) == task;
+
+        /// <summary>
+        /// The capture loop, on its own thread from construction until <see cref="Stop"/>. While
+        /// recording, frame N of the video file and marker N always belong together: every
+        /// marker pushed gets a frame written, and frames are written in marker order.
+        /// </summary>
+        private void CaptureLoop(CancellationToken token)
         {
-            using var frame = new Mat();
+            // Timely wake-ups when a frame arrives keep the marker stamps close to the frames.
+            // The thread is this loop's own (LongRunning), but restored anyway in case it is not.
+            ThreadPriority priority = Thread.CurrentThread.Priority;
+            Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
+
+            // Each frame is decoded into `next`, so `current` still holds the last good frame
+            // if decoding fails: that frame is then recorded again, under the new marker, rather
+            // than leaving a marker without a frame. Black until the first frame arrives.
+            using var bufferA = new Mat(captureSize, MatType.CV_8UC3, Scalar.Black);
+            using var bufferB = new Mat();
+            Mat current = bufferA, next = bufferB;
+            int nextIndex = 0;
 
             try
             {
@@ -201,65 +264,112 @@ namespace TimeShot
                 {
                     try
                     {
-                        capture.Read(frame);
-                        if (frame.Empty())
+                        // Grab() returns as soon as the camera delivers a frame and leaves the
+                        // decoding to Retrieve(), so the marker is pushed at delivery.
+                        if (!capture.Grab())
                         {
-                            await Task.Delay(10, token);
+                            Thread.Sleep(NoFrameRetryDelayMs);
                             continue;
                         }
 
-                        if (recording)
+                        FrameWriter? writer = recording ? frameWriter : null;
+                        int index = -1;
+                        if (writer is not null)
                         {
-                            int index = Interlocked.Increment(ref frameIndex) - 1;
-                            Cv2.PutText(frame, $"{index}", new OpenCvSharp.Point(10, 30),
-                                HersheyFonts.HersheySimplex, .75, Scalar.Red, 2);
-                            videoWriter?.Write(frame);
-
+                            index = nextIndex++;
                             // The marker payload is the join key between "Nth frame written to
                             // the file" and wall-clock time -- what lets a later XDF import line
-                            // up video frames with the rest of a recording.
+                            // up video frames with the rest of a recording. No timestamp is
+                            // passed: LSL stamps the sample with its own clock as it is pushed.
                             streamOutlet.push_sample([index.ToString()]);
                         }
 
-                        ShowFrame(BitmapConverter.ToBitmap(frame));
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw; // shutdown in progress -- let the outer catch handle it
+                        bool decoded = TryRetrieve(next);
+                        if (decoded)
+                            (current, next) = (next, current);
+
+                        writer?.Add(index, current);
+                        if (decoded)
+                            UpdatePreview(current, index);
                     }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"CameraFrameStreamer: frame capture failed for camera {cameraIndex}: {ex.Message}");
                     }
-
-                    await Task.Delay(LoopIdleDelayMs, token);
                 }
             }
-            catch (OperationCanceledException)
+            finally
             {
-                // Expected on Stop().
+                // The only place these are released: after the loop's last use of them. The
+                // writer writes what it still holds, then finalises the AVI (index and duration).
+                recording = false;
+                frameWriter?.Complete();
+                capture.Release();
+                streamOutlet.Close();
+                Thread.CurrentThread.Priority = priority;
             }
         }
 
-        private void ShowFrame(Bitmap bmp)
+        /// <summary>Decodes the grabbed frame into <paramref name="frame"/>; false if that failed.</summary>
+        private bool TryRetrieve(Mat frame)
         {
-            if (OutputForm.IsDisposed || !OutputForm.IsHandleCreated)
-            {
-                bmp.Dispose();
-                return;
-            }
-
             try
             {
-                OutputForm.pictureBox1.Invoke(() =>
+                return capture.Retrieve(frame) && !frame.Empty();
+            }
+            catch (OpenCVException ex)
+            {
+                Debug.WriteLine($"CameraFrameStreamer: decoding a frame of camera {cameraIndex} failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Hands <paramref name="frame"/> to the preview window without waiting for the UI
+        /// thread: at most one frame per <see cref="MinPreviewInterval"/>, and none while the
+        /// previous one has not been shown yet, so a busy UI costs preview frames instead of
+        /// delaying the capture loop. While recording, the preview shows the frame number too.
+        /// </summary>
+        private void UpdatePreview(Mat frame, int index)
+        {
+            if (previewPending || Stopwatch.GetElapsedTime(lastPreviewTimestamp) < MinPreviewInterval)
+                return;
+            if (OutputForm.IsDisposed || !OutputForm.IsHandleCreated)
+                return;
+            lastPreviewTimestamp = Stopwatch.GetTimestamp();
+
+            Bitmap bitmap;
+            if (index >= 0)
+            {
+                using var labelled = frame.Clone(); // `frame` may still be recorded again
+                FrameWriter.DrawFrameNumber(labelled, index);
+                bitmap = BitmapConverter.ToBitmap(labelled);
+            }
+            else
+            {
+                bitmap = BitmapConverter.ToBitmap(frame);
+            }
+
+            PictureBox pictureBox = OutputForm.pictureBox1;
+            previewPending = true;
+            try
+            {
+                pictureBox.BeginInvoke(() =>
                 {
-                    OutputForm.pictureBox1.Image?.Dispose();
-                    OutputForm.pictureBox1.Image = bmp;
+                    previewPending = false;
+                    if (pictureBox.IsDisposed)
+                    {
+                        bitmap.Dispose();
+                        return;
+                    }
+                    pictureBox.Image?.Dispose();
+                    pictureBox.Image = bitmap;
                 });
             }
             catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
             {
-                bmp.Dispose();
+                bitmap.Dispose(); // the preview is closing
+                previewPending = false;
             }
         }
     }
