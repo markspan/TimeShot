@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<!-- TimeShot: a video camera with a clock face in its body (every frame on the clock). -->
+<!-- Monochrome in the Alakazam icon blue on a 24x24 grid, like MovieMerger's icon. -->
+<rect x="2.8" y="6.4" width="13.2" height="11.2" rx="1.8" fill="#4a7fc9" fill-opacity="0.12" stroke="#4a7fc9" stroke-width="1.6"/>
+<path d="M16 10.3L21.2 7.4V16.6L16 13.7Z" fill="#4a7fc9" fill-opacity="0.12" stroke="#4a7fc9" stroke-width="1.6" stroke-linejoin="round"/>
+<circle cx="9.4" cy="12" r="3.4" fill="none" stroke="#4a7fc9" stroke-width="1.3"/>
+<path d="M9.4 10.1V12L10.8 12.9" fill="none" stroke="#4a7fc9" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

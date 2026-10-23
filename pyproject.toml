@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "timeshot"
+description = "Record several cameras at once, with an LSL marker for every recorded frame."
+readme = "readme.MD"
+license = "GPL-2.0-only"
+license-files = ["LICENSE"]
+authors = [{ name = "Mark Span", email = "m.m.span@gmail.com" }]
+requires-python = ">=3.12"
+dependencies = [
+    "av>=19",          # FFmpeg: camera input (Windows, macOS), MJPEG decoding/encoding, AVI/MKV writing
+    "numpy>=2",
+    "pylsl>=1.18",     # first releases whose wheels bundle liblsl for Windows, macOS and Linux
+    "PySide6>=6.8",
+    "linuxpy>=0.25; sys_platform == 'linux'",  # V4L2 camera input (PyAV's Linux wheels lack it)
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.15", "mypy>=1.15"]
+
+[project.scripts]
+timeshot = "timeshot.cli:main"
+
+[project.gui-scripts]
+timeshot-gui = "timeshot.gui.app:main"
+
+[project.urls]
+Source = "https://github.com/markspan/TimeShot"
+
+[tool.setuptools.dynamic]
+version = { attr = "timeshot.__version__" }
+
+[tool.setuptools.package-data]
+timeshot = ["resources/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PL", "PT"]
+ignore = [
+    "PLR0913",  # too many arguments: dataclass-like constructors read better flat
+    "PLR2004",  # magic values: fine in tests and pixel arithmetic
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/timeshot"]
+
+[[tool.mypy.overrides]]
+module = ["av.*", "pylsl.*", "linuxpy.*"]
+ignore_missing_imports = true

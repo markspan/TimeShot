@@ -2,6 +2,28 @@
 
 **TimeShot** is a Windows desktop application designed for synchronized multi-camera video capture with real-time LabStreamingLayer (LSL) integration. It allows users to record video from multiple USB cameras while simultaneously sending frame-accurate markers over LSL for synchronization in experimental setups (e.g., EEG, eye-tracking, behavioral experiments).
 
+## TimeShot 2.0 (in development)
+
+A cross-platform rewrite for Windows, macOS (Intel) and Linux lives in `src/timeshot`. It sends the same LSL marker streams and writes the same kind of video files as TimeShot 1.x, so LabRecorder recordings stay readable by [MovieMerger](https://github.com/markspan/MovieMerger) and by existing analysis scripts. Until 2.0 is released, the Windows application described below is the release.
+
+What changes:
+
+- **The camera's own JPEG frames are written untouched** by default: no re-encoding, so identical quality at a fraction of the CPU. Burning each frame's number into the picture is optional.
+- **One process per camera**, so a camera can never delay another camera's markers, or the window.
+- **One window**: live previews on camera cards, real camera names, format, resolution and frame rate per camera, name templates with their results shown live, inline warnings, LabRecorder connection status and free disk space.
+- **Settings are remembered** per camera, also when cameras come back in another order.
+
+Try it from source, with Python 3.12 or newer:
+
+```bash
+pip install -e ".[dev]"
+timeshot                  # the desktop app
+timeshot devices          # the cameras TimeShot finds, and their modes
+timeshot record -t 10     # record 10 s from every camera without the app (see: timeshot record --help)
+```
+
+`timeshot --synthetic 2 ...` replaces the cameras by two synthetic test cameras, and `pytest` runs the tests. So far 2.0 is tested with synthetic cameras only; `timeshot devices` shows whether it finds your cameras and their modes.
+
 ## Features
 
 - **Multi-camera support**: Detects and manages multiple connected webcams.

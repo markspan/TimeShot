@@ -3,3 +3,8 @@
 /TimeShot/bin/Debug
 /TimeShot/bin
 /dist
+# TimeShot 2.0 (Python)
+__pycache__/
+*.egg-info/
+/.venv/
+/build/
