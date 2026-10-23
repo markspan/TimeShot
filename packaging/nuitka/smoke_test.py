@@ -9,10 +9,11 @@ With two synthetic cameras it checks that the executable
 
 1. starts and reports its version;
 2. lists the cameras (the camera code and PyAV's FFmpeg load);
-3. records: it waits for LabRecorder, played here by LSL inlets, so the recording starts
-   only if liblsl works inside the build; then every marker received must have its frame
-   in the video file, in order (recorder processes, writer and FFmpeg work);
-4. starts the desktop app and keeps it running (Qt and its plugins load).
+3. records without LabRecorder: the recorder processes, the writer and FFmpeg work;
+4. records waiting for LabRecorder, played here by LSL inlets, so the recording starts only
+   if liblsl works inside the build (and LSL can reach it through the firewall); then every
+   marker received must have its frame in the video file, in order;
+5. starts the desktop app and keeps it running (Qt and its plugins load).
 """
 
 from __future__ import annotations
@@ -54,13 +55,27 @@ def main() -> int:
     )
 
     with tempfile.TemporaryDirectory(prefix="timeshot-smoke-") as scratch:
-        check_recording(executable, Path(scratch))
+        check_recording_alone(executable, Path(scratch))
+        check_recording_with_labrecorder(executable, Path(scratch))
     check_gui_starts(executable)
     print("Smoke test passed.")
     return 0
 
 
-def check_recording(executable: Path, folder: Path) -> None:
+def check_recording_alone(executable: Path, folder: Path) -> None:
+    """A recording that starts at once, without LabRecorder: no LSL connection needed."""
+    streams = f"smoke-{uuid.uuid4().hex[:8]}-{{i}}"
+    arguments = ["--synthetic", "2", "record", "--no-wait", "-t", str(RECORD_SECONDS), "-o", str(folder),
+                 "--file", "alone{i}.avi", "--stream", streams]  # fmt: skip
+    print(run(executable, *arguments))
+    for i in range(2):
+        sequence = sequence_numbers(folder / f"alone{i}.avi")
+        expect(len(sequence) > 10, f"camera {i}, without LabRecorder: {len(sequence)} frames")
+        expect(all(b > a for a, b in itertools.pairwise(sequence)), f"camera {i}: frames in camera order")
+
+
+def check_recording_with_labrecorder(executable: Path, folder: Path) -> None:
+    """A recording that waits for LabRecorder (LSL inlets here): every marker must have its frame."""
     prefix = f"smoke-{uuid.uuid4().hex[:8]}"
     arguments = ["--synthetic", "2", "record", "-t", str(RECORD_SECONDS), "-o", str(folder),
                  "--file", "cam{i}.avi", "--stream", f"{prefix}-{{i}}"]  # fmt: skip
@@ -69,14 +84,18 @@ def check_recording(executable: Path, folder: Path) -> None:
     )
     try:
         inlets = [connect(f"{prefix}-{i}") for i in range(2)]  # "LabRecorder" starts recording
+        if not all(inlets):
+            process.kill()
         output, _ = process.communicate(timeout=STARTUP_TIMEOUT + RECORD_SECONDS)
     finally:
         if process.poll() is None:
             process.kill()
     print(output)
+    expect(all(inlets), "LSL found both streams (see the output above if not)")
     expect(process.returncode == 0, f"record exited with {process.returncode}")
 
     for i, inlet in enumerate(inlets):
+        assert inlet is not None
         markers = pull_markers(inlet)
         sequence = sequence_numbers(folder / f"cam{i}.avi")
         expect(
@@ -100,9 +119,12 @@ def check_gui_starts(executable: Path) -> None:
         process.wait()
 
 
-def connect(name: str) -> pylsl.StreamInlet:
+def connect(name: str) -> pylsl.StreamInlet | None:
+    """An inlet connected to the stream called ``name``, or None if it does not appear."""
     found = pylsl.resolve_byprop("name", name, timeout=STARTUP_TIMEOUT)
-    expect(bool(found), f"LSL stream {name} appears")
+    print(f"{'ok' if found else 'FAILED'}: LSL stream {name} appears", flush=True)
+    if not found:
+        return None
     inlet = pylsl.StreamInlet(found[0])
     inlet.open_stream(timeout=10)
     return inlet

@@ -169,7 +169,7 @@ def _serve(recorder: CameraRecorder, connection: Connection) -> None:
         if connection.poll(STATUS_INTERVAL):
             try:
                 command = connection.recv()
-            except EOFError:
+            except (EOFError, OSError):  # e.g. ConnectionResetError
                 return  # the GUI is gone
             if isinstance(command, Shutdown):
                 return
