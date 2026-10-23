@@ -1,0 +1,115 @@
+# Builds the Windows release of TimeShot (one self-contained TimeShot.exe with its native
+# libraries, zipped), smoke-tests it, and publishes it as a GitHub release. TimeShot is a
+# Windows Forms application, so Windows x64 is its only platform. Two ways to release:
+#
+# * Actions tab > "Build and release" > Run workflow, with "publish" ticked:
+#   tags the selected branch as v<Version in TimeShot/TimeShot.csproj> and releases it.
+# * Push a version tag yourself; it must match that <Version>:
+#
+#       git tag v1.1.0 && git push origin v1.1.0
+#
+# Before releasing, bump <Version> and update packaging/RELEASE_NOTES.md.
+#
+# Every push that changes the application or its packaging is built and tested as well;
+# without a release, the zip is kept as a workflow artifact.
+
+name: Build and release
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    # Not applied to tag pushes: those always build.
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/**"
+      - "TimeShot/**"
+      - "!TimeShot/bin/**"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish a release tagged v<project version> from the selected branch"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  build:
+    name: Build windows-x64
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build
+        id: build
+        run: >-
+          ./packaging/build.ps1
+          ${{ startsWith(github.ref, 'refs/tags/v') && format('-ExpectVersion {0}', github.ref_name) || '' }}
+      - name: Smoke-test the release
+        run: ./packaging/smoke-test.ps1 "${{ steps.build.outputs.publish_dir }}"
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: TimeShot-windows-x64
+          path: ${{ steps.build.outputs.archive }}
+          if-no-files-found: error
+          compression-level: 0 # already compressed
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Determine the release tag
+        id: tag
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v$VERSION"
+            # Never move or overwrite an existing release from a manual run.
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
+              echo "::error::Tag $tag already exists. Bump <Version> in TimeShot/TimeShot.csproj to release again."
+              exit 1
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Download archive
+        uses: actions/download-artifact@v4
+        with:
+          name: TimeShot-windows-x64
+          path: release
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: TimeShot ${{ needs.build.outputs.version }}
+          files: release/*
+          body_path: packaging/RELEASE_NOTES.md
+          generate_release_notes: true
+          fail_on_unmatched_files: true

@@ -21,6 +21,12 @@
 
 ## Installation
 
+### Download
+
+Get `TimeShot-<version>-windows-x64.zip` from the [latest release](https://github.com/markspan/TimeShot/releases/latest), unzip it anywhere and run `TimeShot\TimeShot.exe`. Everything is included (the .NET runtime too), so nothing else needs installing. If Windows SmartScreen warns on the first start, choose *More info* > *Run anyway*.
+
+To build it yourself instead:
+
 ### Prerequisites
 
 - Windows 10 or higher
@@ -79,6 +85,11 @@ Suppose you are recording behavioral data using two webcams and an EEG cap. You 
 
 ## Development
 
+### Releases
+
+The **Build and release** GitHub Action (`.github/workflows/release.yml`) builds and smoke-tests the Windows release on every change, and publishes it as a GitHub release when run from the Actions tab with *publish* ticked, or when a `v<version>` tag is pushed. Before releasing, bump `<Version>` in `TimeShot/TimeShot.csproj` and update `packaging/RELEASE_NOTES.md`.
+
+To build the same zip locally, run `pwsh packaging/build.ps1` on Windows. It needs the .NET 8 SDK and Visual Studio (or its Build Tools) with the "Desktop development with C++" workload, which provides the Visual C++ runtime files that `lsl.dll` needs.
 
 ### Key Concepts
 

@@ -1,0 +1,48 @@
+TimeShot: third-party software in this release
+==============================================
+
+TimeShot itself is licensed under the GNU General Public License,
+version 2 only (see LICENSE.txt). Source code:
+https://github.com/markspan/TimeShot
+
+This compiled release also contains the following software, each under its
+own license. Their source code is available from the locations listed.
+
+.NET runtime and Windows Forms
+    License:  MIT
+    Source:   https://github.com/dotnet/runtime
+              https://github.com/dotnet/winforms
+
+OpenCV 4.10 (in OpenCvSharpExtern.dll)
+    License:  Apache License 2.0
+    Source:   https://github.com/opencv/opencv
+
+OpenCvSharp (OpenCvSharp.dll, OpenCvSharp.Extensions.dll, OpenCvSharpExtern.dll)
+    License:  Apache License 2.0
+    Source:   https://github.com/shimat/opencvsharp
+
+FFmpeg (opencv_videoio_ffmpeg4100_64.dll, dynamically loaded by OpenCV)
+    License:  GNU LGPL version 2.1 or later
+    Source:   https://github.com/opencv/opencv_3rdparty/tree/ffmpeg/4.x
+              https://ffmpeg.org/download.html
+    You may replace this library with your own build.
+
+liblsl (lsl.dll)
+    License:  MIT
+    Source:   https://github.com/sccn/liblsl
+
+liblsl C# bindings (LSL.cs)
+    License:  MIT
+    Source:   https://github.com/labstreaminglayer/liblsl-Csharp
+
+MaterialSkin.2
+    License:  MIT
+    Source:   https://github.com/leocb/MaterialSkin
+
+YamlDotNet
+    License:  MIT
+    Source:   https://github.com/aaubry/YamlDotNet
+
+Microsoft Visual C++ runtime (msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll)
+    License:  Microsoft Visual Studio license terms (redistributable code)
+    Info:     https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
