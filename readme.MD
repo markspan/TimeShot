@@ -83,6 +83,10 @@ Suppose you are recording behavioral data using two webcams and an EEG cap. You 
 ### Key Concepts
 
 - LSL is only used when recording; no unnecessary traffic during previews.
+- Each frame's marker is pushed the moment the camera delivers the frame, and LSL stamps it with its own clock right then. TimeShot never sets timestamps itself.
+- Each camera's capture loop runs on a thread of its own and only grabs frames and pushes markers. Writing the video (encoding and disk I/O) happens on a separate writer thread per camera, and the preview is updated without waiting for the UI, so neither can delay the next marker.
+- No recorded frame is ever dropped: frame N of the `.avi` always belongs to marker N. If the disk falls more than about two seconds behind, capture waits for it rather than skip frames.
+- Previews show at most 20 frames per second; recordings keep the camera's full frame rate.
 
 ## Contributing
 

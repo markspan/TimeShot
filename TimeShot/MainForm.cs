@@ -203,9 +203,9 @@ namespace TimeShot
         /// <summary>
         /// Closing the window (title-bar X, Alt+F4) stops all sessions first, so every video
         /// file is finalised and every LSL stream closed; while recording it asks first, like
-        /// the Stop button. The close is deferred rather than blocked: stopping needs this
-        /// UI thread (the capture loops update the previews through it), so waiting on it
-        /// synchronously here would hang the application.
+        /// the Stop button. The close is deferred rather than blocked: stopping continues on
+        /// this UI thread (Stop() awaits the capture loops and then closes the previews), so
+        /// waiting on it synchronously here would hang the application.
         /// </summary>
         private async void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
         {
