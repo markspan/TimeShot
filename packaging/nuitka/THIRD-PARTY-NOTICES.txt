@@ -9,22 +9,35 @@ This compiled build also contains the following software, each under its
 own license. Their source code is available from the locations listed.
 
 Python
-    License:  Python Software Foundation License
+    License:  Python Software Foundation License (GPL-compatible)
     Source:   https://www.python.org/
 
 Qt 6 and PySide6 / Shiboken6 (dynamically linked)
-    License:  GNU LGPL version 3
+    License:  GNU GPL version 2. They are offered under LGPL-3.0-only OR
+              GPL-2.0-only OR GPL-3.0-only; TimeShot uses them under the
+              GPL version 2.
     Source:   https://download.qt.io/official_releases/
               https://code.qt.io/cgit/pyside/pyside-setup.git/
-    You may replace the bundled Qt libraries with your own build.
 
 FFmpeg (dynamically linked, through PyAV)
-    License:  GNU LGPL version 3 or later (as built for PyAV); the build includes
-              the x264 H.264 encoder, licensed under the GNU GPL version 2 or later
+    License:  GNU GPL version 2 or later. FFmpeg itself is GNU LGPL version
+              2.1 or later; this build includes the x264 and x265 encoders,
+              both GNU GPL version 2 or later, which put all of it under the
+              GPL. Its libraries report "LGPL version 3 or later" because the
+              build opted for FFmpeg's optional version 3 terms
+              (--enable-version3); it contains none of the components that
+              require them.
     Source:   https://ffmpeg.org/download.html
               https://github.com/PyAV-Org/pyav-ffmpeg (the build)
               https://code.videolan.org/videolan/x264
-    You may replace the bundled FFmpeg libraries with your own build.
+              https://bitbucket.org/multicoreware/x265_git
+    Also part of this build, each under its own license: dav1d
+    (BSD-2-Clause), Opus, libvpx and libwebp (BSD-3-Clause), SVT-AV1
+    (BSD-3-Clause-Clear), libvmaf (BSD-2-Clause-Patent), libvpl (MIT), LAME
+    (GNU LGPL version 2 or later), libiconv (GNU LGPL version 2.1 or later),
+    zlib (zlib License), and the MinGW-w64 runtime: libgcc and libstdc++
+    (GNU GPL version 3 or later with the GCC Runtime Library Exception 3.1)
+    and winpthreads (MIT).
 
 PyAV
     License:  BSD-3-Clause
@@ -35,12 +48,16 @@ liblsl and pylsl
     Source:   https://github.com/sccn/liblsl
               https://github.com/labstreaminglayer/pylsl
 
-NumPy (with the OpenBLAS it bundles)
-    License:  BSD-3-Clause (OpenBLAS: BSD-3-Clause)
+NumPy
+    License:  BSD-3-Clause. It bundles OpenBLAS (BSD-3-Clause), LAPACK
+              (BSD-3-Clause-Open-MPI) and GCC runtime code (GNU GPL version 3
+              or later with the GCC Runtime Library Exception 3.1).
     Source:   https://github.com/numpy/numpy
 
-Microsoft Visual C++ runtime (shipped with Python)
+Microsoft Visual C++ runtime (shipped with Python, Qt and NumPy)
     License:  Microsoft Visual Studio license terms (redistributable code)
 
-The executable was compiled with Nuitka (https://nuitka.net/), whose runtime
-code included in compiled programs is licensed under the Apache License 2.0.
+The executable was compiled with Nuitka (https://nuitka.net/). The Nuitka
+runtime code included in compiled programs is licensed under the GNU AGPL
+version 3 with the Nuitka Runtime Library Exception 1.0, which allows the
+compiled program to be distributed under terms of the author's choice.
