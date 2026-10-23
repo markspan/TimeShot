@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -88,7 +89,13 @@ def test_command_line_lists_and_records(tmp_path: Path, capsys: pytest.CaptureFi
     arguments = ["record", "--no-wait", "-t", "1.5", "-o", str(folder), "-s", "9", "--file", "cam{i}_{s}.mkv"]
     assert cli_main([*arguments, "--stream", "cli-test-{i}-{s}"]) == 0
     assert sorted(p.name for p in folder.iterdir()) == ["cam0_9.mkv", "cam1_9.mkv"]
-    assert "0 frames" not in capsys.readouterr().out
+    reports = re.findall(
+        r": (\d+) frames, (\d+) markers -> .*  (\S+)$", capsys.readouterr().out, re.MULTILINE
+    )
+    assert len(reports) == 2
+    assert all(
+        int(frames) > 0 and frames == markers and status == "ok" for frames, markers, status in reports
+    )
 
     # A second run would overwrite: refused without --overwrite.
     assert cli_main([*arguments, "--stream", "cli-test2-{i}-{s}"]) == 2
