@@ -278,8 +278,13 @@ def raise_thread_priority() -> None:
     if sys.platform != "win32":
         return
     import ctypes  # noqa: PLC0415
+    from ctypes import wintypes  # noqa: PLC0415
 
-    kernel32 = ctypes.windll.kernel32
+    kernel32 = ctypes.WinDLL("kernel32")
+    # Declared, so that the thread handle is passed as the 64-bit value it is.
+    kernel32.GetCurrentThread.restype = wintypes.HANDLE
+    kernel32.SetThreadPriority.argtypes = (wintypes.HANDLE, ctypes.c_int)
+    kernel32.SetThreadPriority.restype = wintypes.BOOL
     thread_priority_above_normal = 1
     if not kernel32.SetThreadPriority(kernel32.GetCurrentThread(), thread_priority_above_normal):
         log.debug("could not raise the capture thread's priority")

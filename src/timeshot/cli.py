@@ -174,8 +174,10 @@ def _setups(args: argparse.Namespace) -> list[CameraSetup]:
 
 
 def _report(session: Session) -> int:
-    """Prints how each camera's recording went; 0 if all went well."""
-    ok = bool(session.results)
+    """Prints how each camera's recording went, and what went wrong; 0 if all went well."""
+    ok = bool(session.results) and not session.problems
+    for key, problem in session.problems.items():
+        print(f"{key}: PROBLEM: {problem}", file=sys.stderr)
     for key, result in session.results.items():
         status = (
             "ok" if result.ok else f"PROBLEM: {result.file.error or 'frame count differs from marker count'}"

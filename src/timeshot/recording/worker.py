@@ -77,7 +77,8 @@ class RecorderProcess:
             self._connection.send(command)
 
     def reports(self) -> list[Report]:
-        """The reports received since the last call (never waits)."""
+        """The reports received since the last call (never waits). A process that ended
+        without saying so (it crashed) is reported as a fatal failure with its exit code."""
         received: list[Report] = []
         try:
             while not self._ended and self._connection.poll():
@@ -85,10 +86,10 @@ class RecorderProcess:
                 received.append(report)
                 if isinstance(report, Ended):
                     self._ended = True
-        except (EOFError, OSError):
+        except (EOFError, OSError):  # the process is gone without its last report
             self._ended = True
-        if self._ended and not received and not self._process.is_alive():
-            received.append(Ended())
+            self._process.join(1.0)
+            received += [Failed(_unexpected_end(self._process.exitcode), fatal=True), Ended()]
         return received
 
     @property
@@ -113,6 +114,17 @@ class RecorderProcess:
         self.preview.close()
         self._ended = True
         return received
+
+
+def _unexpected_end(exit_code: int | None) -> str:
+    """Why a recorder process ended without reporting it: its exit code, which for a crash
+    names the kind (on Windows e.g. 0xC0000005, an access violation in native code)."""
+    if exit_code is None:
+        return "The recorder process stopped responding."
+    if exit_code < 0:
+        return f"The recorder process was ended by signal {-exit_code}."
+    shown = f"0x{exit_code:08X}" if exit_code > 255 else str(exit_code)
+    return f"The recorder process ended unexpectedly (exit code {shown})."
 
 
 def run_recorder(

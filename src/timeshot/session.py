@@ -169,6 +169,7 @@ class Session:
     wait_for_consumers: bool = True
     started_at: float | None = None  # time.monotonic() when recording started
     results: dict[str, RecordingResult] = field(default_factory=dict)  # of the last recording
+    problems: dict[str, str] = field(default_factory=dict)  # each camera's error since start()
     # What start() was given, for when recording begins (possibly later, in poll()).
     _session: str = field(default="", init=False, repr=False)
     _folder: Path = field(default=Path(), init=False, repr=False)
@@ -211,6 +212,7 @@ class Session:
         self._session, self._folder, self._frame_numbers = session, folder, frame_numbers
         self.wait_for_consumers = wait_for_consumers
         self.results = {}
+        self.problems = {}
         for state in self.cameras.values():
             state.result = None
             _name, stream, file = state.setup.names(session)
@@ -260,6 +262,7 @@ class Session:
                     case Failed(message, fatal):
                         state.error = message
                         state.ended = state.ended or fatal
+                        self.problems[key] = message
                     case Ended():
                         state.ended = True
         if self.phase is Phase.WAITING and all(
@@ -285,5 +288,7 @@ class Session:
             for report in state.process.shutdown():
                 if isinstance(report, Recorded):
                     self.results[key] = report.result
+                elif isinstance(report, Failed):
+                    self.problems[key] = report.message
         self.cameras.clear()
         self.phase = Phase.PREVIEW

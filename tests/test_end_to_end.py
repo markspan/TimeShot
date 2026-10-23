@@ -100,3 +100,17 @@ def test_command_line_lists_and_records(tmp_path: Path, capsys: pytest.CaptureFi
     # A second run would overwrite: refused without --overwrite.
     assert cli_main([*arguments, "--stream", "cli-test2-{i}-{s}"]) == 2
     assert "will be overwritten" in capsys.readouterr().err
+
+
+@pytest.mark.usefixtures("synthetic_cameras")
+def test_a_crashed_recorder_process_is_reported(stream_name: str) -> None:
+    session, setups = open_session({0: f"{stream_name}-a", 1: f"{stream_name}-b"})
+    try:
+        crashed = session.cameras[setups[0].camera.key]
+        crashed.process._process.kill()  # as if the camera driver took the process down
+        assert poll_until(session, lambda: crashed.ended)
+        assert crashed.error is not None
+        assert "ended" in crashed.error
+        assert session.problems == {setups[0].camera.key: crashed.error}
+    finally:
+        session.shutdown()
