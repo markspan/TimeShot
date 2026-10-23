@@ -24,6 +24,19 @@ timeshot record -t 10     # record 10 s from every camera without the app (see: 
 
 `timeshot --synthetic 2 ...` replaces the cameras by two synthetic test cameras, and `pytest` runs the tests. So far 2.0 is tested with synthetic cameras only; `timeshot devices` shows whether it finds your cameras and their modes.
 
+To compile a standalone Windows version (a folder with `TimeShot.exe` that runs without Python or anything else installed), run on Windows:
+
+```bat
+py -3.12 -m venv .venv-build
+.venv-build\Scripts\activate
+pip install -r packaging\nuitka\requirements.txt
+pip install --no-deps .
+python packaging\nuitka\build.py
+python packaging\nuitka\smoke_test.py build\TimeShot\TimeShot.exe
+```
+
+This makes `dist\TimeShot-<version>-windows-x64.zip`. Nuitka needs a C compiler (Visual Studio or its Build Tools, with "Desktop development with C++"), or downloads MinGW64 itself. The **Build TimeShot 2 (Windows)** GitHub Action does the same on every change and keeps the zip as a download.
+
 ## Features
 
 - **Multi-camera support**: Detects and manages multiple connected webcams.

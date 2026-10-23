@@ -1,0 +1,20 @@
+# Exact versions for building the standalone TimeShot 2 for Windows (packaging/nuitka/build.py),
+# so that every build comes from the same, known-good set. Install into a fresh virtual
+# environment, then TimeShot itself without its (unpinned) dependencies:
+#
+#     pip install -r packaging/nuitka/requirements.txt
+#     pip install --no-deps .
+
+# Compiler.
+nuitka==4.3.1
+ordered-set==4.1.0
+
+# Build only: writes the .ico rendered from the SVG icon.
+Pillow==13.0.0
+
+# TimeShot's runtime dependencies (see pyproject.toml).
+av==19.0.2
+numpy==2.5.4
+pylsl==1.18.6
+PySide6-Essentials==6.9.3
+shiboken6==6.9.3

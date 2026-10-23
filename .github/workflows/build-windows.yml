@@ -1,0 +1,62 @@
+# Compiles the standalone Windows version of TimeShot 2 with Nuitka (packaging/nuitka/build.py),
+# smoke-tests it end to end with synthetic cameras, and keeps the zip as a workflow artifact
+# (Actions tab > the run > Artifacts). Also runnable by hand: Actions > this workflow > Run.
+
+name: Build TimeShot 2 (Windows)
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - ".github/workflows/build-windows.yml"
+      - "packaging/nuitka/**"
+      - "pyproject.toml"
+      - "src/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  build:
+    name: Build windows-x64
+    runs-on: windows-latest
+    # A cold Nuitka build takes 10-20 minutes; also bounds a job stuck waiting for a runner.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: packaging/nuitka/requirements.txt
+      - name: Install build dependencies
+        run: |
+          pip install -r packaging/nuitka/requirements.txt
+          pip install --no-deps .
+      - name: Compile with Nuitka
+        id: build
+        run: python packaging/nuitka/build.py
+      - name: Smoke-test the executable
+        run: python packaging/nuitka/smoke_test.py "${{ steps.build.outputs.executable }}"
+      - name: Upload the zip
+        uses: actions/upload-artifact@v6
+        with:
+          name: TimeShot-${{ steps.build.outputs.version }}-windows-x64
+          path: ${{ steps.build.outputs.archive }}
+          if-no-files-found: error
+          compression-level: 0 # already compressed
+      - name: Upload Nuitka's report
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nuitka-report-windows-x64
+          path: build/compilation-report.xml
+          if-no-files-found: ignore

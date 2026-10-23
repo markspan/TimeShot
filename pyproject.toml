@@ -14,7 +14,7 @@ dependencies = [
     "av>=19",          # FFmpeg: camera input (Windows, macOS), MJPEG decoding/encoding, AVI/MKV writing
     "numpy>=2",
     "pylsl>=1.18",     # first releases whose wheels bundle liblsl for Windows, macOS and Linux
-    "PySide6>=6.8",
+    "PySide6-Essentials>=6.8",  # QtCore, QtGui, QtWidgets, QtSvg: all TimeShot uses
     "linuxpy>=0.25; sys_platform == 'linux'",  # V4L2 camera input (PyAV's Linux wheels lack it)
 ]
 dynamic = ["version"]

@@ -1,0 +1,44 @@
+TimeShot 2: third-party software in this build
+==============================================
+
+TimeShot itself is licensed under the GNU General Public License,
+version 2 only (see LICENSE.txt). Source code:
+https://github.com/markspan/TimeShot
+
+This compiled build also contains the following software, each under its
+own license. Their source code is available from the locations listed.
+
+Python
+    License:  Python Software Foundation License
+    Source:   https://www.python.org/
+
+Qt 6 and PySide6 / Shiboken6 (dynamically linked)
+    License:  GNU LGPL version 3
+    Source:   https://download.qt.io/official_releases/
+              https://code.qt.io/cgit/pyside/pyside-setup.git/
+    You may replace the bundled Qt libraries with your own build.
+
+FFmpeg (dynamically linked, through PyAV)
+    License:  GNU LGPL version 3 or later (as built for PyAV)
+    Source:   https://ffmpeg.org/download.html
+              https://github.com/PyAV-Org/pyav-ffmpeg (the build)
+    You may replace the bundled FFmpeg libraries with your own build.
+
+PyAV
+    License:  BSD-3-Clause
+    Source:   https://github.com/PyAV-Org/PyAV
+
+liblsl and pylsl
+    License:  MIT
+    Source:   https://github.com/sccn/liblsl
+              https://github.com/labstreaminglayer/pylsl
+
+NumPy (with the OpenBLAS it bundles)
+    License:  BSD-3-Clause (OpenBLAS: BSD-3-Clause)
+    Source:   https://github.com/numpy/numpy
+
+Microsoft Visual C++ runtime (shipped with Python)
+    License:  Microsoft Visual Studio license terms (redistributable code)
+
+The executable was compiled with Nuitka (https://nuitka.net/), whose runtime
+code included in compiled programs is licensed under the Apache License 2.0.
