@@ -1,0 +1,11 @@
+# Nuitka package configuration for compiling TimeShot (passed by build.py).
+---
+# pylsl loads liblsl with ctypes from its "lib" folder, which Nuitka cannot tell from the code:
+# declare the library, so that it is copied to the same folder in the build.
+- module-name: 'pylsl'
+  dlls:
+    - from_filenames:
+        relative_path: 'lib'
+        prefixes:
+          - 'lsl' # Windows: lsl.dll
+          - 'liblsl' # macOS and Linux: liblsl.dylib, liblsl.so

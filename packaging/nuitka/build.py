@@ -41,6 +41,8 @@ APP_NAME = "TimeShot"
 LAUNCHER = HERE / "launcher.py"
 ICON_SVG = ROOT / "src" / "timeshot" / "resources" / "timeshot.svg"
 NOTICES = HERE / "THIRD-PARTY-NOTICES.txt"
+# Declares what Nuitka cannot find by itself: the liblsl that pylsl loads with ctypes.
+PACKAGE_CONFIG = HERE / "timeshot.nuitka-package.config.yml"
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 
 
@@ -98,6 +100,7 @@ def nuitka_command(version: str, build_dir: Path, icon: Path) -> list[str]:
         # Nuitka cannot see it: include all of PyAV.
         "--include-package=av",
         "--include-package-data=timeshot:*.svg",  # the window icon
+        f"--user-package-configuration-file={PACKAGE_CONFIG}",
         "--nofollow-import-to=linuxpy",  # the Linux camera backend's library
         # No console window when double-clicked; command-line output still appears when
         # started from a terminal. The recorder processes (the same executable) get no
