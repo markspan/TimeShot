@@ -94,6 +94,9 @@ def nuitka_command(version: str, build_dir: Path, icon: Path) -> list[str]:
         "--noinclude-qt-translations",  # the app is in English only
         # The camera backends are imported when chosen, so name the whole package.
         "--include-package=timeshot",
+        # PyAV's compiled modules import some of its others from C (e.g. av._cyutil), where
+        # Nuitka cannot see it: include all of PyAV.
+        "--include-package=av",
         "--include-package-data=timeshot:*.svg",  # the window icon
         "--nofollow-import-to=linuxpy",  # the Linux camera backend's library
         # No console window when double-clicked; command-line output still appears when
