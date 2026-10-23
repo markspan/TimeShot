@@ -11,10 +11,13 @@ namespace TimeShot
         readonly MaterialSkin.MaterialSkinManager materialSkinManager;
         private readonly List<CameraSession> cameraSessions = new();
         AppConfig config = new();
+        // Set once the sessions are stopped, so the deferred Close() in MainForm_FormClosing goes through.
+        private bool readyToClose;
 
         public MainForm()
         {
             InitializeComponent();
+            FormClosing += MainForm_FormClosing;
             var exeDir = AppDomain.CurrentDomain.BaseDirectory;
             var yamlPath = Path.Combine(exeDir, "config.yaml");
 
@@ -83,14 +86,15 @@ namespace TimeShot
         /// </summary>
         private void CreateStreamButton_Click(object sender, EventArgs e)
         {
+            var selected = CameraBox.Controls.OfType<CameraInfo>().Where(c => c.Check.Checked).ToList();
+            if (!ConfirmVideoFiles(selected))
+                return;
+
             cameraSessions.Clear();
             CreateStreamButton.Enabled = false;
 
-            foreach (Control control in CameraBox.Controls)
+            foreach (CameraInfo camInfo in selected)
             {
-                if (control is not CameraInfo camInfo || !camInfo.Check.Checked)
-                    continue;
-
                 int cameraIndex = (int)camInfo.Tag!; // always set in GetAvailableCameras()
                 try
                 {
@@ -158,9 +162,73 @@ namespace TimeShot
             StopButton.Text = "Exit TimeShot";
         }
 
-        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        /// <summary>
+        /// Refuses video file names that two cameras share (both would write one file) and asks
+        /// before any existing file gets overwritten. Runs before the streams are created,
+        /// while the names can still be changed: they are also announced in the LSL streams.
+        /// </summary>
+        /// <returns>True if the streams may be created with these file names.</returns>
+        private static bool ConfirmVideoFiles(IReadOnlyList<CameraInfo> cameras)
         {
-            Task.WhenAll(cameraSessions.Select(s => s.Stop())).GetAwaiter().GetResult();
+            var unnamed = cameras.Where(c => string.IsNullOrWhiteSpace(c.FileName.Text)).Select(c => c.CamName.Text).ToList();
+            if (unnamed.Count > 0)
+            {
+                MessageBox.Show("Enter a video file name for:\n\n" + string.Join("\n", unnamed),
+                    "Video file names", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
+            var clashes = cameras
+                .GroupBy(c => Path.GetFullPath(c.FileName.Text), StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.First().FileName.Text)
+                .ToList();
+            if (clashes.Count > 0)
+            {
+                MessageBox.Show("Each camera needs its own video file, but these names are used more than once:\n\n" +
+                    string.Join("\n", clashes), "Video file names", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
+            var existing = cameras.Select(c => c.FileName.Text).Where(File.Exists).ToList();
+            if (existing.Count == 0)
+                return true;
+
+            var answer = MessageBox.Show("These video files already exist and will be overwritten when recording starts:\n\n" +
+                string.Join("\n", existing) + "\n\nOverwrite them? Choose No to change the session or file names first.",
+                "Overwrite recordings?", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            return answer == DialogResult.Yes;
+        }
+
+        /// <summary>
+        /// Closing the window (title-bar X, Alt+F4) stops all sessions first, so every video
+        /// file is finalised and every LSL stream closed; while recording it asks first, like
+        /// the Stop button. The close is deferred rather than blocked: stopping needs this
+        /// UI thread (the capture loops update the previews through it), so waiting on it
+        /// synchronously here would hang the application.
+        /// </summary>
+        private async void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
+        {
+            if (readyToClose || cameraSessions.Count == 0)
+                return;
+
+            if (cameraSessions.Any(s => s.IsRecording) && e.CloseReason == CloseReason.UserClosing)
+            {
+                var answer = MessageBox.Show("Recording is in progress. Stop recording and exit?",
+                    "Confirm Exit", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (answer == DialogResult.No)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+            }
+
+            e.Cancel = true;
+            Enabled = false;
+            await Task.WhenAll(cameraSessions.Select(s => s.Stop()));
+            cameraSessions.Clear();
+            readyToClose = true;
+            Close();
         }
 
         private void Session_KeyPress(object sender, KeyPressEventArgs e)
