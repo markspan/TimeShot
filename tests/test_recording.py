@@ -20,6 +20,7 @@ from helpers import (
 
 from timeshot.cameras.base import RAW, CameraMode, Frame
 from timeshot.cameras.synthetic import SyntheticBackend, SyntheticStream
+from timeshot.frames import H264_ENCODERS, H264Encoder, available_h264_encoder, works
 from timeshot.recording.label import COLOR, draw_frame_number
 from timeshot.recording.preview import MAX_HEIGHT, MAX_WIDTH, PreviewSlot, preview_size
 from timeshot.recording.recorder import CameraRecorder, PreviewMaker
@@ -116,8 +117,8 @@ def test_a_damaged_frame_is_replaced_by_the_previous_one(tmp_path: Path) -> None
 
 def test_unsupported_file_types_are_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unsupported video file type"):
-        VideoWriter(tmp_path / "out.mp4", MODE)
-    assert not (tmp_path / "out.mp4").exists()
+        VideoWriter(tmp_path / "out.mov", MODE)
+    assert not (tmp_path / "out.mov").exists()
 
 
 # ── preview slot ─────────────────────────────────────────────────────────────
@@ -199,3 +200,53 @@ def test_preview_maker_publishes_small_images() -> None:
         previews.stop()
         recorder.close()
     assert images[-1].shape == (360, 640, 3)
+
+
+# ── H.264 (.mp4) ─────────────────────────────────────────────────────────────
+
+
+def mp4_packets(path: Path) -> list[tuple[int | None, int | None]]:
+    """(pts, dts) of every video packet in the file."""
+    with av.open(str(path)) as container:
+        return [(p.pts, p.dts) for p in container.demux(video=0) if p.size]
+
+
+@pytest.mark.parametrize("mode", [MODE, RAW_MODE])
+def test_h264_mp4_keeps_every_frame_in_order(tmp_path: Path, mode: CameraMode) -> None:
+    path = tmp_path / "out.mp4"
+    writer = VideoWriter(path, mode)
+    assert writer.description.startswith("H.264")
+    for index, frame in enumerate(synthetic_frames(mode, 40)):
+        writer.add(index, frame)
+    result = writer.close()
+    assert (result.frames_written, result.error) == (40, None)
+    assert file_sequence_numbers(path) == list(range(40))
+    packets = mp4_packets(path)
+    assert packets[0][0] == 0, "the first frame is at the start"
+    assert all(pts == dts for pts, dts in packets), "no B-frames: frames stored in the order shown"
+    assert b"moof" in path.read_bytes(), "fragmented, so readable even if cut off"
+
+
+def test_h264_with_frame_numbers(tmp_path: Path) -> None:
+    path = tmp_path / "numbered.mp4"
+    writer = VideoWriter(path, MODE, frame_numbers=True)
+    for index, frame in enumerate(synthetic_frames(MODE, 5)):
+        writer.add(index, frame)
+    assert writer.close().frames_written == 5
+    assert file_sequence_numbers(path) == list(range(5))
+
+
+def test_h264_falls_back_to_x264(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    missing = H264Encoder("h264_missing", "a missing encoder", "nv12")
+    monkeypatch.setattr("timeshot.recording.writer.available_h264_encoder", lambda: missing)
+    writer = VideoWriter(tmp_path / "out.mp4", MODE)
+    for index, frame in enumerate(synthetic_frames(MODE, 3)):
+        writer.add(index, frame)
+    assert writer.close().frames_written == 3
+    assert "x264" in writer.description
+
+
+def test_the_chosen_h264_encoder_works() -> None:
+    encoder = available_h264_encoder()
+    assert encoder in H264_ENCODERS
+    assert works(encoder)

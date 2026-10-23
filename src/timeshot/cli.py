@@ -20,6 +20,7 @@ from pathlib import Path
 
 from timeshot import __version__
 from timeshot.cameras import SYNTHETIC_ENV, CameraError, CameraMode, default_backend_name, list_cameras
+from timeshot.frames import available_h264_encoder
 from timeshot.session import DEFAULT_FILE, DEFAULT_NAME, DEFAULT_STREAM, CameraSetup, Phase, Session, check
 
 # How often the record command checks on the recorder processes.
@@ -76,7 +77,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     record.add_argument("-s", "--session", default="1", help="session name, for {s} in names (default: 1)")
     record.add_argument("-o", "--folder", type=Path, default=Path(), help="folder for the video files")
-    record.add_argument("--file", default=DEFAULT_FILE, help=f"file name template (default: {DEFAULT_FILE})")
+    record.add_argument(
+        "--file",
+        default=DEFAULT_FILE,
+        help=f"file name template: .avi or .mkv for camera JPEG, .mp4 for H.264 (default: {DEFAULT_FILE})",
+    )
     record.add_argument(
         "--stream", default=DEFAULT_STREAM, help=f"LSL stream name template (default: {DEFAULT_STREAM})"
     )
@@ -104,6 +109,8 @@ def _devices(_args: argparse.Namespace) -> int:
         print(f"\n[{number}] {camera.key}\n    id: {camera.id}")
         for mode in sorted(camera.modes, key=lambda m: (not m.is_jpeg, -m.width * m.height, -m.fps)):
             print(f"    {mode.key():32} {mode}")
+    encoder = available_h264_encoder()
+    print(f"\nH.264 encoder for .mp4 files: {encoder.label} ({encoder.name})")
     return 0
 
 

@@ -33,7 +33,7 @@ from timeshot.recording.protocol import (
 )
 from timeshot.recording.recorder import RecorderStats, RecordingResult
 from timeshot.recording.worker import RecorderProcess
-from timeshot.recording.writer import CONTAINERS
+from timeshot.recording.writer import FILE_TYPES
 
 log = logging.getLogger(__name__)
 
@@ -130,8 +130,9 @@ def _file_problem(file: str) -> str | None:
         return "The file name is empty."
     if set(file) & _UNSAFE_IN_FILE_NAMES:
         return f"The file name {file!r} contains a character not allowed in file names."
-    if Path(file).suffix.lower() not in CONTAINERS:
-        return f"The file name {file!r} must end in {' or '.join(CONTAINERS)}."
+    if Path(file).suffix.lower() not in FILE_TYPES:
+        *others, last = FILE_TYPES
+        return f"The file name {file!r} must end in {', '.join(others)} or {last}."
     return None
 
 

@@ -14,12 +14,14 @@ import logging
 import multiprocessing
 import os
 import sys
+import threading
 import time
 from multiprocessing.connection import Connection
 from multiprocessing.synchronize import Lock
 from pathlib import Path
 
 from timeshot.cameras import CameraError, get_backend
+from timeshot.frames import available_h264_encoder
 from timeshot.recording.preview import PreviewSlot
 from timeshot.recording.protocol import (
     CloseStream,
@@ -200,6 +202,11 @@ def _execute(recorder: CameraRecorder, command: Command, connection: Connection)
     match command:
         case OpenStream(stream_name, video_file):
             recorder.open_stream(stream_name, video_file)
+            if video_file.lower().endswith(".mp4"):
+                # Finds the H.264 encoder now, so that recording need not wait for it.
+                threading.Thread(
+                    target=available_h264_encoder, name="find H.264 encoder", daemon=True
+                ).start()
         case StartRecording(path, frame_numbers):
             recorder.start_recording(Path(path), frame_numbers=frame_numbers)
         case StopRecording():

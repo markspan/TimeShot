@@ -54,6 +54,7 @@ class RecorderStats:
     markers_sent: int  # in the current or last recording
     backlog: int  # frames waiting to be written
     error: str | None
+    writing: str = ""  # how frames are written while recording, e.g. "H.264, NVIDIA NVENC"
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +165,7 @@ class CameraRecorder:
             markers_sent=self._markers_sent,
             backlog=writer.backlog if writer is not None else 0,
             error=self._error,
+            writing=writer.description if writer is not None else "",
         )
 
     def latest_frame(self) -> tuple[int, Frame] | None:

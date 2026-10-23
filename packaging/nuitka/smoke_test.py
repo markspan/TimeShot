@@ -9,7 +9,8 @@ With two synthetic cameras it checks that the executable
 
 1. starts and reports its version;
 2. lists the cameras (the camera code and PyAV's FFmpeg load);
-3. records without LabRecorder: the recorder processes, the writer and FFmpeg work;
+3. records without LabRecorder, as camera JPEG and as H.264: the recorder processes, the
+   writer and FFmpeg's encoders work;
 4. records waiting for LabRecorder, played here by LSL inlets, so the recording starts only
    if liblsl works inside the build (and LSL can reach it through the firewall); then every
    marker received must have its frame in the video file, in order;
@@ -63,15 +64,19 @@ def main() -> int:
 
 
 def check_recording_alone(executable: Path, folder: Path) -> None:
-    """A recording that starts at once, without LabRecorder: no LSL connection needed."""
-    streams = f"smoke-{uuid.uuid4().hex[:8]}-{{i}}"
-    arguments = ["--synthetic", "2", "record", "--no-wait", "-t", str(RECORD_SECONDS), "-o", str(folder),
-                 "--file", "alone{i}.avi", "--stream", streams]  # fmt: skip
-    print(run(executable, *arguments))
-    for i in range(2):
-        sequence = sequence_numbers(folder / f"alone{i}.avi")
-        expect(len(sequence) > 10, f"camera {i}, without LabRecorder: {len(sequence)} frames")
-        expect(all(b > a for a, b in itertools.pairwise(sequence)), f"camera {i}: frames in camera order")
+    """Recordings that start at once, without LabRecorder (no LSL connection needed): camera
+    JPEG frames into AVI, and H.264 into MP4."""
+    for extension in (".avi", ".mp4"):
+        streams = f"smoke-{uuid.uuid4().hex[:8]}-{{i}}"
+        arguments = ["--synthetic", "2", "record", "--no-wait", "-t", str(RECORD_SECONDS), "-o", str(folder),
+                     "--file", f"alone{{i}}{extension}", "--stream", streams]  # fmt: skip
+        print(run(executable, *arguments))
+        for i in range(2):
+            sequence = sequence_numbers(folder / f"alone{i}{extension}")
+            expect(
+                len(sequence) > 10, f"camera {i}, {extension}, without LabRecorder: {len(sequence)} frames"
+            )
+            expect(all(b > a for a, b in itertools.pairwise(sequence)), f"camera {i}: frames in camera order")
 
 
 def check_recording_with_labrecorder(executable: Path, folder: Path) -> None:

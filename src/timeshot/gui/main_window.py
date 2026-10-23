@@ -13,6 +13,7 @@ from PySide6.QtGui import QCloseEvent, QResizeEvent
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -39,6 +40,8 @@ log = logging.getLogger(__name__)
 # How often the window takes in the recorders' reports and previews (previews come at 20 fps).
 REFRESH_MS = 50
 CARD_WIDTH = 440  # the grid gets as many columns of about this width as fit
+# The formats offered; a file name's extension decides its format (see recording.writer).
+FILE_FORMATS = (("Camera JPEG (.avi)", ".avi"), ("Camera JPEG (.mkv)", ".mkv"), ("H.264 (.mp4)", ".mp4"))
 
 _RECORD_STYLE = (
     f"QPushButton {{ background: {RECORD}; color: white; font-weight: bold; border: none;"
@@ -116,6 +119,15 @@ class MainWindow(QMainWindow):
             "recorded untouched and the numbers are in the LSL markers only."
         )
         self.numbers_box.toggled.connect(self._settings_changed)
+        self.format_box = QComboBox()
+        for label, extension in FILE_FORMATS:
+            self.format_box.addItem(label, extension)
+        self.format_box.setToolTip(
+            "Camera JPEG: the camera's own frames, untouched: identical quality, little CPU, large files.\n"
+            "H.264: files about ten times smaller, encoded by the graphics hardware if it can,\n"
+            "else by the CPU. Sets the extension of every camera's file name."
+        )
+        self.format_box.activated.connect(self._format_chosen)
         self.rescan_button = QPushButton("Find cameras")
         self.rescan_button.setToolTip("Look for cameras again, e.g. after plugging one in")
         self.rescan_button.clicked.connect(self.rescan)
@@ -127,6 +139,9 @@ class MainWindow(QMainWindow):
         top.addWidget(QLabel("Folder"))
         top.addWidget(self.folder_edit, 1)
         top.addWidget(browse)
+        top.addSpacing(16)
+        top.addWidget(QLabel("Format"))
+        top.addWidget(self.format_box)
         top.addSpacing(16)
         top.addWidget(self.wait_box)
         top.addWidget(self.numbers_box)
@@ -238,11 +253,23 @@ class MainWindow(QMainWindow):
         if folder:
             self.folder_edit.setText(folder)
 
+    def _format_chosen(self, index: int) -> None:
+        for card in self._cards.values():
+            card.set_file_extension(self.format_box.itemData(index))
+        self._settings_changed()
+
     def _settings_changed(self) -> None:
         problems = check(self._setups, self.session_edit.text(), self._folder())
         for key, card in self._cards.items():
             card.set_problems([p for p in problems if p.camera == key])
         self._problems = problems
+        # The format the cameras' file names agree on; none shown if they differ.
+        extensions = {Path(s.file).suffix.lower() for s in self._setups if s.enabled}
+        self.format_box.blockSignals(True)
+        self.format_box.setCurrentIndex(
+            self.format_box.findData(extensions.pop()) if len(extensions) == 1 else -1
+        )
+        self.format_box.blockSignals(False)
 
     def _folder(self) -> Path:
         return Path(self.folder_edit.text().strip() or ".").expanduser()
@@ -327,7 +354,7 @@ class MainWindow(QMainWindow):
             if state is not None and (image := state.process.preview.read()) is not None:
                 card.show_preview(image)
         self.rescan_button.setEnabled(phase is Phase.PREVIEW and self._scan is None)
-        for widget in (self.session_edit, self.folder_edit, self.wait_box, self.numbers_box):
+        for widget in (self.session_edit, self.folder_edit, self.format_box, self.wait_box, self.numbers_box):
             widget.setEnabled(phase is Phase.PREVIEW)
         self._show_phase(phase)
         self._show_disk()

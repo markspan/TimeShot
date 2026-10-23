@@ -84,6 +84,7 @@ def test_command_line_lists_and_records(tmp_path: Path, capsys: pytest.CaptureFi
     listing = capsys.readouterr().out
     assert "Synthetic camera 1" in listing
     assert "1280x720@30:mjpeg" in listing
+    assert "H.264 encoder for .mp4 files:" in listing
 
     folder = tmp_path / "videos"
     arguments = ["record", "--no-wait", "-t", "1.5", "-o", str(folder), "-s", "9", "--file", "cam{i}_{s}.mkv"]
@@ -114,3 +115,11 @@ def test_a_crashed_recorder_process_is_reported(stream_name: str) -> None:
         assert session.problems == {setups[0].camera.key: crashed.error}
     finally:
         session.shutdown()
+
+
+@pytest.mark.usefixtures("synthetic_cameras")
+def test_command_line_records_h264(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    arguments = ["record", "--no-wait", "-t", "1.5", "-o", str(tmp_path), "--file", "cam{i}.mp4"]
+    assert cli_main([*arguments, "--stream", "cli-h264-{i}"]) == 0
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["cam0.mp4", "cam1.mp4"]
+    assert "PROBLEM" not in capsys.readouterr().err

@@ -47,11 +47,11 @@ def test_clashing_and_blank_names_are_problems(tmp_path: Path) -> None:
 
 def test_unusable_file_names_are_problems(tmp_path: Path) -> None:
     cameras = setups(3)
-    cameras[0].file = "Video_{i}.mp4"
+    cameras[0].file = "Video_{i}.mov"
     cameras[1].file = "sub/Video_{i}.avi"
     cameras[2].file = ""
     messages = [p.message for p in check(cameras, "1", tmp_path)]
-    assert any("must end in .avi or .mkv" in m for m in messages)
+    assert any("must end in .avi, .mkv or .mp4" in m for m in messages)
     assert any("not allowed in file names" in m for m in messages)
     assert "The file name is empty." in messages
 

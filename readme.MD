@@ -8,7 +8,8 @@ A cross-platform rewrite for Windows, macOS (Intel) and Linux lives in `src/time
 
 What changes:
 
-- **The camera's own JPEG frames are written untouched** by default: no re-encoding, so identical quality at a fraction of the CPU. Burning each frame's number into the picture is optional.
+- **The camera's own JPEG frames are written untouched** by default (`.avi` or `.mkv`): no re-encoding, so identical quality at a fraction of the CPU. Burning each frame's number into the picture is optional.
+- **Or H.264 in MP4** (`.mp4`, the "Format" choice): files about ten times smaller, encoded by the graphics hardware (NVIDIA, Intel, AMD, Apple) if it can, else by the CPU. Without B-frames, so frame N is marker N in every tool, and fragmented, so a recording cut off by a crash stays readable.
 - **One process per camera**, so a camera can never delay another camera's markers, or the window.
 - **One window**: live previews on camera cards, real camera names, format, resolution and frame rate per camera, name templates with their results shown live, inline warnings, LabRecorder connection status and free disk space.
 - **Settings are remembered** per camera, also when cameras come back in another order.

@@ -64,6 +64,18 @@ def test_record_and_stop_from_the_window(app: QApplication, window: MainWindow, 
     assert sorted(p.name for p in (tmp_path / "videos").iterdir()) == ["Video_0.avi", "Video_1.avi"]
 
 
+def test_the_format_choice_sets_every_file_extension(app: QApplication, window: MainWindow) -> None:
+    assert pump(app, lambda: bool(window.session.cameras))
+    mp4 = window.format_box.findData(".mp4")
+    window.format_box.setCurrentIndex(mp4)
+    window.format_box.activated.emit(mp4)
+    assert all(setup.file.endswith(".mp4") for setup in window._setups)
+    card = next(iter(window._cards.values()))
+    card.file.setText("Face_{s}.mkv")
+    card.file.textEdited.emit(card.file.text())
+    assert window.format_box.currentIndex() == -1, "the cameras' formats differ"
+
+
 def test_settings_are_remembered(app: QApplication, window: MainWindow, tmp_path: Path) -> None:
     assert pump(app, lambda: bool(window.session.cameras))
     window.session_edit.setText("42")

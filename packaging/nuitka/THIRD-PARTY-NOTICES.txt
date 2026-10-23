@@ -19,9 +19,11 @@ Qt 6 and PySide6 / Shiboken6 (dynamically linked)
     You may replace the bundled Qt libraries with your own build.
 
 FFmpeg (dynamically linked, through PyAV)
-    License:  GNU LGPL version 3 or later (as built for PyAV)
+    License:  GNU LGPL version 3 or later (as built for PyAV); the build includes
+              the x264 H.264 encoder, licensed under the GNU GPL version 2 or later
     Source:   https://ffmpeg.org/download.html
               https://github.com/PyAV-Org/pyav-ffmpeg (the build)
+              https://code.videolan.org/videolan/x264
     You may replace the bundled FFmpeg libraries with your own build.
 
 PyAV
