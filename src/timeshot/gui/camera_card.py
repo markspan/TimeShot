@@ -199,7 +199,9 @@ class CameraCard(QFrame):
         self.stream = self._field(
             setup.stream, "Name of the camera's LSL marker stream, as LabRecorder lists it"
         )
-        self.file = self._field(setup.file, "Video file name (.avi or .mkv), in the output folder")
+        self.file = self._field(
+            setup.file, "Video file name, in the output folder: .avi or .mkv for camera JPEG, .mp4 for H.264"
+        )
         self.result = QLabel()
         self.result.setTextFormat(Qt.TextFormat.RichText)
         self.result.setWordWrap(True)

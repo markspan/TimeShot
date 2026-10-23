@@ -1,6 +1,7 @@
-# Builds the Windows release of TimeShot (one self-contained TimeShot.exe with its native
-# libraries, zipped), smoke-tests it, and publishes it as a GitHub release. TimeShot is a
-# Windows Forms application, so Windows x64 is its only platform. Two ways to release:
+# Builds the Windows release of TimeShot 1.x (one self-contained TimeShot.exe with its native
+# libraries, zipped), smoke-tests it, and publishes it as a GitHub release. TimeShot 1.x is a
+# Windows Forms application, so Windows x64 is its only platform. (TimeShot 2 is built and
+# released by build-windows.yml.) Two ways to release:
 #
 # * Actions tab > "Build and release" > Run workflow, with "publish" ticked:
 #   tags the selected branch as v<Version in TimeShot/TimeShot.csproj> and releases it.
@@ -18,11 +19,12 @@ name: Build and release
 on:
   push:
     branches: ["**"]
-    tags: ["v*"]
+    tags: ["v1.*"] # TimeShot 2 (v2.*) is released by build-windows.yml
     # Not applied to tag pushes: those always build.
     paths:
       - ".github/workflows/release.yml"
       - "packaging/**"
+      - "!packaging/nuitka/**" # TimeShot 2
       - "TimeShot/**"
       - "!TimeShot/bin/**"
   workflow_dispatch:
@@ -113,3 +115,4 @@ jobs:
           body_path: packaging/RELEASE_NOTES.md
           generate_release_notes: true
           fail_on_unmatched_files: true
+          make_latest: false # TimeShot 2 is the current version

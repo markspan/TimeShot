@@ -5,4 +5,4 @@ moment the camera delivered the frame, so a recording made with LabRecorder (an 
 places every video frame on the same clock as the other streams. MovieMerger reads both.
 """
 
-__version__ = "2.0.0.dev0"
+__version__ = "2.0.0"

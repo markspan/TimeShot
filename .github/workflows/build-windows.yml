@@ -1,18 +1,36 @@
 # Compiles the standalone Windows version of TimeShot 2 with Nuitka (packaging/nuitka/build.py),
-# smoke-tests it end to end with synthetic cameras, and keeps the zip as a workflow artifact
-# (Actions tab > the run > Artifacts). Also runnable by hand: Actions > this workflow > Run.
+# smoke-tests it end to end with synthetic cameras, and publishes it as a GitHub release. Two
+# ways to release:
+#
+# * Actions tab > "Build TimeShot 2 (Windows)" > Run workflow, with "publish" ticked:
+#   tags the selected branch as v<__version__ in src/timeshot/__init__.py> and releases it.
+# * Push a version tag yourself; it must match that version:
+#
+#       git tag v2.0.0 && git push origin v2.0.0
+#
+# Before releasing, bump __version__ and update packaging/nuitka/RELEASE_NOTES.md.
+#
+# Every push that changes the app or its packaging is built and tested as well; without a
+# release, the zip is kept as a workflow artifact (Actions tab > the run > Artifacts).
 
 name: Build TimeShot 2 (Windows)
 
 on:
   push:
     branches: ["**"]
+    tags: ["v2.*"] # TimeShot 1.x (v1.*) is released by release.yml
+    # Not applied to tag pushes: those always build.
     paths:
       - ".github/workflows/build-windows.yml"
       - "packaging/nuitka/**"
       - "pyproject.toml"
       - "src/**"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish a release tagged v<TimeShot version> from the selected branch"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -30,6 +48,8 @@ jobs:
     runs-on: windows-latest
     # A cold Nuitka build takes 10-20 minutes; also bounds a job stuck waiting for a runner.
     timeout-minutes: 60
+    outputs:
+      version: ${{ steps.build.outputs.version }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -41,6 +61,14 @@ jobs:
         run: |
           pip install -r packaging/nuitka/requirements.txt
           pip install --no-deps .
+      - name: Check the tag against the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $version = python -c "from importlib.metadata import version; print(version('timeshot'))"
+          if ("v$version" -ne "${{ github.ref_name }}") {
+            "::error::Tag ${{ github.ref_name }} does not match TimeShot $version (src/timeshot/__init__.py)."
+            exit 1
+          }
       - name: Compile with Nuitka
         id: build
         run: python packaging/nuitka/build.py
@@ -60,3 +88,44 @@ jobs:
           name: nuitka-report-windows-x64
           path: build/compilation-report.xml
           if-no-files-found: ignore
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Determine the release tag
+        id: tag
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v$VERSION"
+            # Never move or overwrite an existing release from a manual run.
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
+              echo "::error::Tag $tag already exists. Bump __version__ in src/timeshot/__init__.py to release again."
+              exit 1
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Download the zip
+        uses: actions/download-artifact@v7
+        with:
+          name: TimeShot-${{ needs.build.outputs.version }}-windows-x64
+          path: release
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: TimeShot ${{ needs.build.outputs.version }}
+          files: release/*
+          body_path: packaging/nuitka/RELEASE_NOTES.md
+          generate_release_notes: true
+          fail_on_unmatched_files: true
