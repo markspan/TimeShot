@@ -44,41 +44,8 @@ jobs:
       - name: Compile with Nuitka
         id: build
         run: python packaging/nuitka/build.py
-      - name: Keep crash dumps of TimeShot
-        # Windows Error Reporting then writes a minidump of any TimeShot process that crashes
-        # (recorder processes included); "Show where TimeShot crashed" reads them.
-        run: |
-          $key = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\TimeShot.exe"
-          New-Item -Path $key -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value "$env:RUNNER_TEMP\crash-dumps" -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null # minidump
-          New-ItemProperty -Path $key -Name DumpCount -PropertyType DWord -Value 4 -Force | Out-Null
-          Set-Service WerSvc -StartupType Manual
-          Start-Service WerSvc
       - name: Smoke-test the executable
         run: python packaging/nuitka/smoke_test.py "${{ steps.build.outputs.executable }}"
-      - name: Show where TimeShot crashed
-        if: failure()
-        run: |
-          $dumps = @(Get-ChildItem "$env:RUNNER_TEMP\crash-dumps" -Filter *.dmp -ErrorAction SilentlyContinue)
-          if ($dumps.Count -eq 0) { "No crash dumps were written."; exit 0 }
-          # Installed on the Windows Server 2025 runner image (Windows SDK debugging tools).
-          $cdb = "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe"
-          if (-not (Test-Path $cdb)) { "cdb.exe is not installed; the dumps are in the crash-dumps artifact."; exit 0 }
-          $dist = Split-Path "${{ steps.build.outputs.executable }}"
-          $symbols = "srv*$env:RUNNER_TEMP\symbols*https://msdl.microsoft.com/download/symbols;$dist"
-          foreach ($dump in $dumps) {
-            "===== $($dump.Name) ====="
-            # The exception and its stack first; then the debugger's analysis (fast-fail kind, faulting module).
-            & $cdb -z $dump.FullName -i $dist -y $symbols -lines -c ".ecxr; kn 40; !analyze -v; q"
-          }
-      - name: Upload the crash dumps
-        if: failure()
-        uses: actions/upload-artifact@v6
-        with:
-          name: crash-dumps-windows-x64
-          path: ${{ runner.temp }}/crash-dumps
-          if-no-files-found: ignore
       - name: Upload the zip
         uses: actions/upload-artifact@v6
         with:
