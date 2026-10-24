@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -95,3 +98,22 @@ def test_status_line_describes_the_camera() -> None:
     assert message is None
     state.stats = RecorderStats(30.0, 100, 1e5, 3.0, False, False, False, 0, 0, None)
     assert describe(state, Phase.PREVIEW, mode)[1] == "The camera stopped delivering frames"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows' DLL search")
+def test_qt_loads_with_a_foreign_icuuc_dll_on_the_dll_search_path(tmp_path: Path) -> None:
+    """As under Anaconda, whose icuuc.dll lacks the plain-named functions Qt needs from Windows'
+    ICU: plain PySide6 fails to load, the app (which loads Windows' ICU first) does not."""
+    shutil.copy(Path(sys.base_prefix) / "python3.dll", tmp_path / "icuuc.dll")  # any other DLL
+
+    def import_with_foreign_icu(module: str) -> subprocess.CompletedProcess[str]:
+        code = f"import os; os.add_dll_directory({str(tmp_path)!r}); import {module}"
+        return subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, timeout=120, check=False
+        )
+
+    plain = import_with_foreign_icu("PySide6.QtCore")
+    assert plain.returncode != 0, "the problem, without TimeShot"
+    assert "QtCore" in plain.stderr
+    app = import_with_foreign_icu("timeshot.gui.app")
+    assert app.returncode == 0, app.stderr
