@@ -186,7 +186,11 @@ def live_check(names: list[str]) -> None:
 
         print(
             "\ntimeshot.gui imported"
-            + (" (it loads Windows' ICU first)" if hasattr(timeshot.gui, "_load_windows_icu") else "")
+            + (
+                " (it loads Windows' ICU and PySide6's Qt first)"
+                if hasattr(timeshot.gui, "QT_LIBRARIES")
+                else ""
+            )
         )
     except ImportError as error:
         print(f"\ntimeshot.gui not imported: {error}")
@@ -224,6 +228,9 @@ def main() -> int:
                 "icuuc.dll",
                 "icuin.dll",
                 "Qt6Core.dll",
+                "Qt6Gui.dll",
+                "Qt6Widgets.dll",
+                "Qt6Svg.dll",
                 "msvcp140.dll",
                 "vcruntime140.dll",
                 "vcruntime140_1.dll",

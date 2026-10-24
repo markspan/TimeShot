@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -13,7 +14,9 @@ from typing import cast
 import pytest
 from PySide6.QtWidgets import QApplication
 
+import timeshot.gui
 from timeshot.cameras.base import CameraInfo, CameraMode
+from timeshot.gui import QT_LIBRARIES
 from timeshot.gui.camera_card import describe
 from timeshot.gui.main_window import MainWindow
 from timeshot.gui.theme import app_icon, apply_theme
@@ -100,20 +103,48 @@ def test_status_line_describes_the_camera() -> None:
     assert describe(state, Phase.PREVIEW, mode)[1] == "The camera stopped delivering frames"
 
 
+def test_the_app_loads_the_qt_library_of_every_qt_module_it_imports() -> None:
+    sources = Path(timeshot.gui.__file__).parent.parent.rglob("*.py")
+    used = {
+        name for path in sources for name in re.findall(r"PySide6\.Qt(\w+)", path.read_text(encoding="utf-8"))
+    }
+    assert used <= set(QT_LIBRARIES), "add the missing ones to timeshot.gui.QT_LIBRARIES"
+
+
+# Prints which file each DLL named on the command line was loaded from.
+REPORT_LOADED = """
+import ctypes, sys
+kernel32 = ctypes.WinDLL("kernel32")
+kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+kernel32.GetModuleHandleW.argtypes = (ctypes.c_wchar_p,)
+kernel32.GetModuleFileNameW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32)
+for name in sys.argv[1:]:
+    buffer = ctypes.create_unicode_buffer(1024)
+    kernel32.GetModuleFileNameW(kernel32.GetModuleHandleW(name), buffer, len(buffer))
+    print(name, buffer.value, sep="=")
+"""
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows' DLL search")
-def test_qt_loads_with_a_foreign_icuuc_dll_on_the_dll_search_path(tmp_path: Path) -> None:
-    """As under Anaconda, whose icuuc.dll lacks the plain-named functions Qt needs from Windows'
-    ICU: plain PySide6 fails to load, the app (which loads Windows' ICU first) does not."""
-    shutil.copy(Path(sys.base_prefix) / "python3.dll", tmp_path / "icuuc.dll")  # any other DLL
+def test_qt_loads_its_own_dlls_with_foreign_copies_on_the_dll_search_path(tmp_path: Path) -> None:
+    """As under Anaconda, whose own icuuc.dll and Qt DLLs lack functions Qt and PySide6 need:
+    plain PySide6 fails to load, the app (which loads the right copies first) does not."""
+    qt_dlls = [f"Qt6{name}.dll" for name in QT_LIBRARIES]
+    for name in ["icuuc.dll", *qt_dlls]:
+        shutil.copy(Path(sys.base_prefix) / "python3.dll", tmp_path / name)  # any other DLL
 
-    def import_with_foreign_icu(module: str) -> subprocess.CompletedProcess[str]:
-        code = f"import os; os.add_dll_directory({str(tmp_path)!r}); import {module}"
-        return subprocess.run(
-            [sys.executable, "-c", code], capture_output=True, text=True, timeout=120, check=False
-        )
+    def import_with_foreign_dlls(module: str) -> subprocess.CompletedProcess[str]:
+        code = f"import os; os.add_dll_directory({str(tmp_path)!r}); import {module}\n{REPORT_LOADED}"
+        command = [sys.executable, "-c", code, "icuuc.dll", *qt_dlls]
+        return subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
 
-    plain = import_with_foreign_icu("PySide6.QtCore")
+    plain = import_with_foreign_dlls("PySide6.QtCore")
     assert plain.returncode != 0, "the problem, without TimeShot"
     assert "QtCore" in plain.stderr
-    app = import_with_foreign_icu("timeshot.gui.app")
+    app = import_with_foreign_dlls("timeshot.gui.app")
     assert app.returncode == 0, app.stderr
+    loaded = {
+        name.lower(): Path(path) for name, path in (line.split("=", 1) for line in app.stdout.splitlines())
+    }
+    assert loaded["icuuc.dll"].parent.name.lower() == "system32"
+    assert all(loaded[name.lower()].parent.name == "PySide6" for name in qt_dlls), loaded
