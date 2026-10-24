@@ -65,7 +65,7 @@ Use a Python from [python.org](https://www.python.org/downloads/) (or your syste
 
 `pytest` runs the tests: they record from synthetic cameras through the real recorder processes, LSL streams and video writer, and drive the window offscreen. The **Tests** GitHub Action runs them, with lint (`ruff`) and type checks (`mypy`), on Windows, macOS and Linux.
 
-So far TimeShot 2.0 has been tested with synthetic cameras only, and its hardware H.264 encoders have not yet been tested on real graphics hardware. `timeshot devices` shows whether it finds your cameras and their modes, and `timeshot devices --details` why it leaves one out.
+TimeShot 2.0 has been tested with synthetic cameras and with an Elgato Facecam MK.2; its hardware H.264 encoders have not yet been used for a recording on real graphics hardware. `timeshot devices` shows whether it finds your cameras and their modes, and `timeshot devices --details` why it leaves one out.
 
 ### Building the Windows version
 

@@ -14,7 +14,15 @@ first start: choose *More info* > *Run anyway*.
 
 On macOS (Intel) and Linux, TimeShot 2.0 runs from source; see the readme.
 
-## What's new
+## What's new in 2.0.1
+
+* **Cameras are found on computers without a microphone.** TimeShot 2.0.0 found no camera at all
+  there: FFmpeg's list of DirectShow devices fails as a whole when the computer has no audio capture
+  device. TimeShot now reads the device list FFmpeg logs, which lists the cameras regardless.
+* **`TimeShot.exe devices --details`** shows why a camera is missing: the versions, every device the
+  camera interface lists, and each camera's modes as FFmpeg reports them.
+
+## TimeShot 2.0
 
 TimeShot 2.0 is a rewrite. It sends the same LSL marker streams and writes the same kind of video files
 as TimeShot 1.x, so LabRecorder recordings stay readable by MovieMerger and by existing analysis scripts.
@@ -36,9 +44,10 @@ and no recorded frame is ever dropped: frame N of the video always belongs to ma
 
 ## Known limitations
 
-* TimeShot 2.0 has so far been tested with synthetic test cameras only. `TimeShot.exe devices` shows
-  whether it finds your cameras and their modes; please report any camera that does not work.
-* The hardware H.264 encoders have not yet been tested on real graphics hardware. TimeShot tries each
-  one before using it and falls back to the CPU encoder (x264) if none works.
+* TimeShot 2.0 has been tested with synthetic test cameras and with an Elgato Facecam MK.2.
+  `TimeShot.exe devices --details` shows whether it finds your cameras, and why not; please report any
+  camera that does not work.
+* The hardware H.264 encoders have not yet been used for a recording on real graphics hardware.
+  TimeShot tries each one before using it and falls back to the CPU encoder (x264) if none works.
 
 The zip contains `LICENSE.txt` and `THIRD-PARTY-NOTICES.txt` with the licenses of the bundled software.
