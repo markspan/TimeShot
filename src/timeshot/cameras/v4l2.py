@@ -53,6 +53,8 @@ class V4l2Backend:
                 with device:
                     name = device.info.card or str(device.filename)
                     modes = _modes(v4l2, device)
+                    formats = sorted({frame_type.pixel_format.name for frame_type in device.info.frame_types})
+                    log.debug("%s (%s) offers %s", name, device.filename, ", ".join(formats) or "nothing")
             except OSError as error:
                 log.warning("Skipping %s: %s", device.filename, error)
                 continue

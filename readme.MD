@@ -31,6 +31,7 @@ Without the window, from a terminal (`TimeShot.exe` on Windows, `timeshot` when 
 
 ```bash
 timeshot devices                         # the cameras TimeShot finds, and their modes
+timeshot devices --details               # ... and why a camera is missing
 timeshot record -t 10                    # record every camera for 10 s, once LabRecorder records
 timeshot record --file Video_{i}.mp4     # record H.264 instead of camera JPEG; Ctrl+C stops
 timeshot record --help                   # everything else
@@ -60,7 +61,7 @@ timeshot devices          # the cameras TimeShot finds, and their modes
 
 `pytest` runs the tests: they record from synthetic cameras through the real recorder processes, LSL streams and video writer, and drive the window offscreen. The **Tests** GitHub Action runs them, with lint (`ruff`) and type checks (`mypy`), on Windows, macOS and Linux.
 
-So far TimeShot 2.0 has been tested with synthetic cameras only, and its hardware H.264 encoders have not yet been tested on real graphics hardware. `timeshot devices` shows whether it finds your cameras and their modes.
+So far TimeShot 2.0 has been tested with synthetic cameras only, and its hardware H.264 encoders have not yet been tested on real graphics hardware. `timeshot devices` shows whether it finds your cameras and their modes, and `timeshot devices --details` why it leaves one out.
 
 ### Building the Windows version
 

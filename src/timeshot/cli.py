@@ -2,6 +2,7 @@
 
     timeshot                      start the desktop app
     timeshot devices              list the cameras and the modes they offer
+    timeshot devices --details    ... and what the camera interface reports about them
     timeshot record ...           record without the desktop app (see timeshot record --help)
 
 ``--synthetic N`` (before the command) replaces the cameras by N synthetic test cameras.
@@ -12,11 +13,14 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import platform
 import signal
 import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
+
+import av
 
 from timeshot import __version__
 from timeshot.cameras import SYNTHETIC_ENV, CameraError, CameraMode, default_backend_name, list_cameras
@@ -59,6 +63,11 @@ def _parser() -> argparse.ArgumentParser:
 
     devices = commands.add_parser("devices", help="list the cameras and their modes")
     devices.set_defaults(run=_devices)
+    devices.add_argument(
+        "--details",
+        action="store_true",
+        help="also show what the camera interface reports, to find out why a camera is missing",
+    )
 
     record = commands.add_parser("record", help="record without the desktop app")
     record.set_defaults(run=_record)
@@ -99,11 +108,17 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _devices(_args: argparse.Namespace) -> int:
+def _devices(args: argparse.Namespace) -> int:
+    if args.details:
+        print(
+            f"TimeShot {__version__}, PyAV {av.__version__}, FFmpeg {av.ffmpeg_version_info},"
+            f" Python {platform.python_version()}, {platform.platform()}"
+        )
+        logging.getLogger("timeshot.cameras").setLevel(logging.DEBUG)  # what the backends find
     cameras = list_cameras()
     print(f"Camera interface: {default_backend_name()}")
     if not cameras:
-        print("No cameras found.")
+        print("No cameras found." + ("" if args.details else " Add --details to see why."))
         return 1
     for number, camera in enumerate(cameras):
         print(f"\n[{number}] {camera.key}\n    id: {camera.id}")

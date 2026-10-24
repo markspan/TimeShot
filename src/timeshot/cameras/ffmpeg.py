@@ -13,6 +13,7 @@ import logging
 import re
 import threading
 from collections.abc import Iterator
+from typing import NamedTuple
 
 import av
 import av.logging
@@ -105,6 +106,15 @@ AVF_PIXEL_FORMAT = "uyvy422"
 
 # ── backend ──────────────────────────────────────────────────────────────────
 
+
+class _Device(NamedTuple):
+    """A device as FFmpeg lists it."""
+
+    id: str  # what FFmpeg opens it by
+    name: str
+    video: bool  # known to deliver video; False: unknown (FFmpeg could not tell)
+
+
 # FFmpeg's log is process-wide: one capture at a time.
 _log_lock = threading.Lock()
 
@@ -138,12 +148,14 @@ class FfmpegBackend:
 
     def list_cameras(self) -> list[CameraInfo]:
         cameras = []
-        for camera_id, name in self._devices():
-            modes = self._modes(camera_id)
+        for device in self._devices():
+            modes = self._modes(device.id)
             if modes:
-                cameras.append(CameraInfo(camera_id, name, tuple(modes), self.name))
+                cameras.append(CameraInfo(device.id, device.name, tuple(modes), self.name))
+            elif device.video:
+                log.warning("Camera %r offers no mode TimeShot can record; left out.", device.name)
             else:
-                log.warning("Camera %r offers no mode TimeShot can record; left out.", name)
+                log.debug("%r offers no video mode; left out.", device.name)
         return cameras
 
     def open(self, camera_id: str, mode: CameraMode) -> FfmpegStream:
@@ -167,23 +179,35 @@ class FfmpegBackend:
         # identical cameras), with no audio device.
         return f"video={camera_id}" if self.name == "dshow" else camera_id
 
-    def _devices(self) -> list[tuple[str, str]]:
+    def _devices(self) -> list[_Device]:
         if self.name == "dshow":
+            devices = av.enumerate_input_devices("dshow")
+            for device in devices:
+                log.debug(
+                    "DirectShow lists %r: media types %s, id %s",
+                    device.description, ", ".join(device.media_types) or "unknown", device.name,
+                )  # fmt: skip
+            # FFmpeg knows a device's media types only if it could inspect the device; one it
+            # could not inspect may still be a camera, so its modes are asked for too.
             return [
-                (device.name, device.description or device.name)
-                for device in av.enumerate_input_devices("dshow")
-                if "video" in device.media_types
+                _Device(device.name, device.description or device.name, "video" in device.media_types)
+                for device in devices
+                if "video" in device.media_types or not device.media_types
             ]
         text = capture_ffmpeg_log("", "avfoundation", {"list_devices": "true"})
-        return parse_avfoundation_devices(text)
+        log.debug("AVFoundation's device list:\n%s", text.rstrip())
+        return [_Device(index, name, video=True) for index, name in parse_avfoundation_devices(text)]
 
     def _modes(self, camera_id: str) -> list[CameraMode]:
         if self.name == "dshow":
             text = capture_ffmpeg_log(self._url(camera_id), "dshow", {"list_options": "true"})
-            return parse_dshow_modes(text)
-        # Asking for an impossible size makes AVFoundation log the sizes it supports.
-        text = capture_ffmpeg_log(camera_id, "avfoundation", {"video_size": "1x1"})
-        return parse_avfoundation_modes(text)
+            modes = parse_dshow_modes(text)
+        else:
+            # Asking for an impossible size makes AVFoundation log the sizes it supports.
+            text = capture_ffmpeg_log(camera_id, "avfoundation", {"video_size": "1x1"})
+            modes = parse_avfoundation_modes(text)
+        log.debug("Modes of %s, as FFmpeg lists them:\n%s", camera_id, text.rstrip() or "(none)")
+        return modes
 
 
 class FfmpegStream:

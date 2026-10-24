@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
 
+import av
 import pytest
 from helpers import assert_frames_match_markers, connect_inlet, pull_markers, wait_until
 
+from timeshot import __version__
 from timeshot.cameras import list_cameras
 from timeshot.cli import main as cli_main
 from timeshot.session import CameraSetup, Phase, Session
@@ -101,6 +104,16 @@ def test_command_line_lists_and_records(tmp_path: Path, capsys: pytest.CaptureFi
     # A second run would overwrite: refused without --overwrite.
     assert cli_main([*arguments, "--stream", "cli-test2-{i}-{s}"]) == 2
     assert "will be overwritten" in capsys.readouterr().err
+
+
+@pytest.mark.usefixtures("synthetic_cameras")
+def test_command_line_details_start_with_the_versions(capsys: pytest.CaptureFixture[str]) -> None:
+    try:
+        assert cli_main(["devices", "--details"]) == 0
+    finally:
+        logging.getLogger("timeshot.cameras").setLevel(logging.NOTSET)
+    first_line = capsys.readouterr().out.splitlines()[0]
+    assert first_line.startswith(f"TimeShot {__version__}, PyAV {av.__version__}, FFmpeg ")
 
 
 @pytest.mark.usefixtures("synthetic_cameras")

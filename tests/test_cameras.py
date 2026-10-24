@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 import av
 import numpy as np
 import pytest
 
+from timeshot.cameras import ffmpeg
 from timeshot.cameras.base import (
     JPEG,
     RAW,
@@ -94,6 +96,39 @@ def test_dshow_modes() -> None:
     assert CameraMode(640, 480, 30.0, RAW, "yuyv422") in modes
     assert all(m.codec in (JPEG, RAW) for m in modes), "h264 and unknown formats are left out"
     assert len(modes) == len(set(modes))
+
+
+def test_dshow_also_tries_devices_whose_media_types_ffmpeg_could_not_tell(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def device(name: str, description: str, *media_types: str) -> av.DeviceInfo:
+        return av.DeviceInfo(
+            name=name, description=description, is_default=False, media_types=list(media_types)
+        )
+
+    listed = [
+        device("@device_pnp_facecam", "Elgato Facecam MK.2"),  # FFmpeg could not inspect it
+        device("@device_cm_mic", "Microphone", "audio"),
+        device("@device_pnp_broken", "Broken camera", "video"),
+        device("@device_sw_other", "Something else"),
+    ]
+    asked: list[str] = []
+
+    def options_log(url: str, input_format: str, options: dict[str, str]) -> str:
+        asked.append(url)
+        return DSHOW_LOG if url == "video=@device_pnp_facecam" else "Could not find any video pin\n"
+
+    monkeypatch.setattr(av, "formats_available", {*av.formats_available, "dshow"})
+    monkeypatch.setattr(av, "enumerate_input_devices", lambda input_format: listed)
+    monkeypatch.setattr(ffmpeg, "capture_ffmpeg_log", options_log)
+    with caplog.at_level(logging.DEBUG, logger="timeshot.cameras"):
+        cameras = ffmpeg.FfmpegBackend("dshow").list_cameras()
+
+    assert [(c.id, c.name) for c in cameras] == [("@device_pnp_facecam", "Elgato Facecam MK.2")]
+    assert "video=@device_cm_mic" not in asked, "audio devices are not asked for video modes"
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings == ["Camera 'Broken camera' offers no mode TimeShot can record; left out."]
+    assert any("Could not find any video pin" in r.getMessage() for r in caplog.records), "FFmpeg's own words"
 
 
 AVFOUNDATION_DEVICES_LOG = """AVFoundation indev @ 0x7f8: AVFoundation video devices:
