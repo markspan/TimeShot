@@ -1,9 +1,10 @@
 """Cameras through FFmpeg's device inputs (PyAV): DirectShow on Windows, AVFoundation on macOS.
 
-FFmpeg lists a camera's modes only in its log, so :class:`FfmpegBackend` captures that log
-and the ``parse_*`` functions read it; they are kept separate so that tests can check them
-against recorded output. DirectShow delivers a camera's JPEG frames untouched; AVFoundation
-always delivers decoded (raw) frames, which TimeShot then encodes.
+FFmpeg lists a camera's modes only in its log, and lists the devices most reliably there too,
+so :class:`FfmpegBackend` captures that log and the ``parse_*`` functions read it; they are
+kept separate so that tests can check them against recorded output. DirectShow delivers a
+camera's JPEG frames untouched; AVFoundation always delivers decoded (raw) frames, which
+TimeShot then encodes.
 """
 
 from __future__ import annotations
@@ -31,11 +32,32 @@ DSHOW_BUFFER = "256M"
 
 # ── DirectShow ───────────────────────────────────────────────────────────────
 
+_DSHOW_DEVICE = re.compile(r'"(?P<name>.+)" \((?P<types>[^()]*)\)\s*$')
+_DSHOW_DEVICE_ID = re.compile(r'Alternative name "(?P<id>.+)"\s*$')
 _DSHOW_MODE = re.compile(
     r"(?:vcodec=(?P<codec>\S+)|pixel_format=(?P<pix>\S+))\s+"
     r"min s=(?P<w0>\d+)x(?P<h0>\d+) fps=(?P<f0>[\d.e+]+)\s+"
     r"max s=(?P<w1>\d+)x(?P<h1>\d+) fps=(?P<f1>[\d.e+]+)"
 )
+
+
+def parse_dshow_devices(log_text: str) -> list[tuple[str, str, tuple[str, ...]]]:
+    """Reads ``(id, name, media types)`` of the devices from the log of ``list_devices``.
+
+    Each device takes two lines: ``"Elgato Facecam MK.2" (video)`` and then
+    ``Alternative name "@device_pnp_..."``, its unique name. The media types read ``(none)``
+    when FFmpeg could not inspect the device; they are then returned empty.
+    """
+    devices = []
+    pending: tuple[str, tuple[str, ...]] | None = None
+    for line in log_text.splitlines():
+        if match := _DSHOW_DEVICE.search(line):
+            types = tuple(t for t in (part.strip() for part in match["types"].split(",")) if t != "none")
+            pending = (match["name"], types)
+        elif pending and (match := _DSHOW_DEVICE_ID.search(line)):
+            devices.append((match["id"], *pending))
+            pending = None
+    return devices
 
 
 def parse_dshow_modes(log_text: str) -> list[CameraMode]:
@@ -181,18 +203,16 @@ class FfmpegBackend:
 
     def _devices(self) -> list[_Device]:
         if self.name == "dshow":
-            devices = av.enumerate_input_devices("dshow")
-            for device in devices:
-                log.debug(
-                    "DirectShow lists %r: media types %s, id %s",
-                    device.description, ", ".join(device.media_types) or "unknown", device.name,
-                )  # fmt: skip
+            # From FFmpeg's log, not av.enumerate_input_devices(): FFmpeg's device list API fails
+            # as a whole when the computer has no audio capture device, losing the cameras.
+            text = capture_ffmpeg_log("dummy", "dshow", {"list_devices": "true"})
+            log.debug("DirectShow's device list:\n%s", text.rstrip())
             # FFmpeg knows a device's media types only if it could inspect the device; one it
             # could not inspect may still be a camera, so its modes are asked for too.
             return [
-                _Device(device.name, device.description or device.name, "video" in device.media_types)
-                for device in devices
-                if "video" in device.media_types or not device.media_types
+                _Device(device_id, name, "video" in types)
+                for device_id, name, types in parse_dshow_devices(text)
+                if "video" in types or not types
             ]
         text = capture_ffmpeg_log("", "avfoundation", {"list_devices": "true"})
         log.debug("AVFoundation's device list:\n%s", text.rstrip())

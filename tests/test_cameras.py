@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import time
 
 import av
@@ -20,7 +21,12 @@ from timeshot.cameras.base import (
     preferred_mode,
     with_keys,
 )
-from timeshot.cameras.ffmpeg import parse_avfoundation_devices, parse_avfoundation_modes, parse_dshow_modes
+from timeshot.cameras.ffmpeg import (
+    parse_avfoundation_devices,
+    parse_avfoundation_modes,
+    parse_dshow_devices,
+    parse_dshow_modes,
+)
 from timeshot.cameras.synthetic import SyntheticBackend, draw_sequence_number, read_sequence_number
 from timeshot.frames import decode, decoder_for, encode_jpeg, jpeg_encoder, to_rgb
 
@@ -98,37 +104,72 @@ def test_dshow_modes() -> None:
     assert len(modes) == len(set(modes))
 
 
+# As FFmpeg's DirectShow input logs its device list: first the video devices...
+DSHOW_CAMERAS_LOG = "".join(
+    [
+        '"Elgato Facecam MK.2"', " (none)", "\n",  # FFmpeg could not inspect it
+        '  Alternative name "@device_pnp_\\\\?\\usb#vid_0fd9&pid_0093&mi_00#7&2b#{65e8773d}\\global"\n',
+        '"USB Camera (1080p)"', " (video", ")", "\n",
+        '  Alternative name "@device_pnp_usbcam"\n',
+        '"Broken camera"', " (video", ")", "\n",
+        '  Alternative name "@device_pnp_broken"\n',
+    ]
+)  # fmt: skip
+# ... then the audio devices,
+DSHOW_DEVICES_LOG = (
+    DSHOW_CAMERAS_LOG + '"Headset" (audio)\n  Alternative name "@device_cm_{33D9A762}\\wave_{0F2A}"\n'
+)
+# or, on a computer without a microphone, an error.
+DSHOW_NO_MICROPHONE_LOG = DSHOW_CAMERAS_LOG + "Could not enumerate audio only devices (or none found).\n"
+
+
+def test_dshow_devices() -> None:
+    cameras = [
+        ("@device_pnp_\\\\?\\usb#vid_0fd9&pid_0093&mi_00#7&2b#{65e8773d}\\global", "Elgato Facecam MK.2", ()),
+        ("@device_pnp_usbcam", "USB Camera (1080p)", ("video",)),
+        ("@device_pnp_broken", "Broken camera", ("video",)),
+    ]
+    assert parse_dshow_devices(DSHOW_NO_MICROPHONE_LOG) == cameras
+    assert parse_dshow_devices(DSHOW_DEVICES_LOG) == [
+        *cameras,
+        ("@device_cm_{33D9A762}\\wave_{0F2A}", "Headset", ("audio",)),
+    ]
+
+
 def test_dshow_also_tries_devices_whose_media_types_ffmpeg_could_not_tell(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    def device(name: str, description: str, *media_types: str) -> av.DeviceInfo:
-        return av.DeviceInfo(
-            name=name, description=description, is_default=False, media_types=list(media_types)
-        )
-
-    listed = [
-        device("@device_pnp_facecam", "Elgato Facecam MK.2"),  # FFmpeg could not inspect it
-        device("@device_cm_mic", "Microphone", "audio"),
-        device("@device_pnp_broken", "Broken camera", "video"),
-        device("@device_sw_other", "Something else"),
-    ]
+    facecam, usb_camera = (
+        device_id for device_id, _name, _types in parse_dshow_devices(DSHOW_DEVICES_LOG)[:2]
+    )
     asked: list[str] = []
 
-    def options_log(url: str, input_format: str, options: dict[str, str]) -> str:
+    def ffmpeg_log(url: str, input_format: str, options: dict[str, str]) -> str:
+        if "list_devices" in options:
+            return DSHOW_DEVICES_LOG
         asked.append(url)
-        return DSHOW_LOG if url == "video=@device_pnp_facecam" else "Could not find any video pin\n"
+        return (
+            DSHOW_LOG
+            if url in (f"video={facecam}", f"video={usb_camera}")
+            else "Could not find any video pin\n"
+        )
 
     monkeypatch.setattr(av, "formats_available", {*av.formats_available, "dshow"})
-    monkeypatch.setattr(av, "enumerate_input_devices", lambda input_format: listed)
-    monkeypatch.setattr(ffmpeg, "capture_ffmpeg_log", options_log)
+    monkeypatch.setattr(ffmpeg, "capture_ffmpeg_log", ffmpeg_log)
     with caplog.at_level(logging.DEBUG, logger="timeshot.cameras"):
         cameras = ffmpeg.FfmpegBackend("dshow").list_cameras()
 
-    assert [(c.id, c.name) for c in cameras] == [("@device_pnp_facecam", "Elgato Facecam MK.2")]
-    assert "video=@device_cm_mic" not in asked, "audio devices are not asked for video modes"
+    assert [c.name for c in cameras] == ["Elgato Facecam MK.2", "USB Camera (1080p)"]
+    assert not any("wave_" in url for url in asked), "audio devices are not asked for video modes"
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert warnings == ["Camera 'Broken camera' offers no mode TimeShot can record; left out."]
     assert any("Could not find any video pin" in r.getMessage() for r in caplog.records), "FFmpeg's own words"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="DirectShow")
+def test_dshow_listing_works_without_cameras_or_microphones() -> None:
+    """The CI machine has neither: FFmpeg's device list API fails there, the logged list not."""
+    assert isinstance(ffmpeg.FfmpegBackend("dshow").list_cameras(), list)
 
 
 AVFOUNDATION_DEVICES_LOG = """AVFoundation indev @ 0x7f8: AVFoundation video devices:

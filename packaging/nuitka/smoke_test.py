@@ -54,6 +54,7 @@ def main() -> int:
     expect(
         "Synthetic camera 1" in listing and "Synthetic camera 2" in listing, "lists both synthetic cameras"
     )
+    check_real_camera_listing(executable)
 
     with tempfile.TemporaryDirectory(prefix="timeshot-smoke-") as scratch:
         check_recording_alone(executable, Path(scratch))
@@ -61,6 +62,18 @@ def main() -> int:
     check_gui_starts(executable)
     print("Smoke test passed.")
     return 0
+
+
+def check_real_camera_listing(executable: Path) -> None:
+    """Lists the computer's own cameras through the real camera interface (DirectShow on
+    Windows). A build machine usually has no camera and no microphone: that must come out as
+    "No cameras found", not as an error."""
+    command = [str(executable), "devices", "--details"]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=STARTUP_TIMEOUT, check=False)
+    output = result.stdout + result.stderr
+    print(output, flush=True)  # what the camera interface reports
+    listed = result.returncode in (0, 1) and "Camera interface:" in output and "Traceback" not in output
+    expect(listed, "lists this computer's cameras (if any) without an error")
 
 
 def check_recording_alone(executable: Path, folder: Path) -> None:
