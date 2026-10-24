@@ -31,6 +31,18 @@ On macOS (Intel) and Linux, TimeShot 2.0 runs from source; see the readme.
 * **`TimeShot.exe devices --details`** shows why a camera is missing: the versions, every device the
   camera interface lists, and each camera's modes as FFmpeg reports them.
 
+2.0.1 was re-released on 24 October 2026, adding:
+
+* **Every error and warning message is now overly polite**, while still saying exactly what went
+  wrong: "We are terribly sorry, but another camera has the same file name (video_0.avi). Would you
+  kindly give each camera its own?"
+* **`TimeShot.exe record` no longer keeps a CPU core busy** while it waits for LabRecorder and while
+  it records.
+* **A settings file edited by hand** with a value of the wrong type (such as a number in quotes) no
+  longer stops TimeShot from starting: that value is ignored. A mistyped `--mode` is explained, and
+  `TimeShot.exe record` says how to permit overwriting files (`--overwrite`).
+* **Under the hood**, the code is reorganized for readability, and every function is documented.
+
 ## TimeShot 2.0
 
 TimeShot 2.0 is a rewrite. It sends the same LSL marker streams and writes the same kind of video files

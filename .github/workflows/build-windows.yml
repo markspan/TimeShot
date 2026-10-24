@@ -10,6 +10,10 @@
 #
 # Before releasing, bump __version__ and update packaging/nuitka/RELEASE_NOTES.md.
 #
+# A manual run never touches an existing release, unless "replace" is ticked as well: it then
+# moves the version's tag to the selected branch and replaces the release's zip and notes
+# (a re-release of the same version, e.g. with fixes that need no new version number).
+#
 # Every push that changes the app or its packaging is built and tested as well; without a
 # release, the zip is kept as a workflow artifact (Actions tab > the run > Artifacts).
 
@@ -29,6 +33,10 @@ on:
     inputs:
       publish:
         description: "Publish a release tagged v<TimeShot version> from the selected branch"
+        type: boolean
+        default: false
+      replace:
+        description: "If that release exists: replace it (move its tag here, replace its zip and notes)"
         type: boolean
         default: false
 
@@ -102,15 +110,22 @@ jobs:
         id: tag
         env:
           VERSION: ${{ needs.build.outputs.version }}
+          REPLACE: ${{ inputs.replace }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             tag="$GITHUB_REF_NAME"
           else
             tag="v$VERSION"
-            # Never move or overwrite an existing release from a manual run.
+            # An existing release is moved and overwritten only when "replace" asks for it.
             if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
-              echo "::error::Tag $tag already exists. Bump __version__ in src/timeshot/__init__.py to release again."
-              exit 1
+              if [[ "$REPLACE" != "true" ]]; then
+                echo "::error::Tag $tag already exists. Bump __version__ in src/timeshot/__init__.py to release again, or tick \"replace\" to re-release $tag."
+                exit 1
+              fi
+              # The release follows its tag; pushed with the workflow's token, this starts no new run.
+              git tag --force "$tag" "$GITHUB_SHA"
+              git push --force origin "refs/tags/$tag"
+              echo "::notice::Re-releasing $tag from $GITHUB_SHA."
             fi
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -129,3 +144,4 @@ jobs:
           body_path: packaging/nuitka/RELEASE_NOTES.md
           generate_release_notes: true
           fail_on_unmatched_files: true
+          overwrite_files: true # a re-release replaces the zip of the same name

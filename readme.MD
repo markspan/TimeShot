@@ -97,7 +97,7 @@ This makes `dist\TimeShot-<version>-windows-x64.zip`. Nuitka needs a C compiler 
 
 ### Releases
 
-The **Build TimeShot 2 (Windows)** GitHub Action (`.github/workflows/build-windows.yml`) builds and smoke-tests the Windows version on every change, and publishes it as a GitHub release when run from the Actions tab with *publish* ticked, or when a `v2.x.y` tag is pushed. Before releasing, bump `__version__` in `src/timeshot/__init__.py` and update `packaging/nuitka/RELEASE_NOTES.md`.
+The **Build TimeShot 2 (Windows)** GitHub Action (`.github/workflows/build-windows.yml`) builds and smoke-tests the Windows version on every change, and publishes it as a GitHub release when run from the Actions tab with *publish* ticked, or when a `v2.x.y` tag is pushed. Before releasing, bump `__version__` in `src/timeshot/__init__.py` and update `packaging/nuitka/RELEASE_NOTES.md`. To re-release a version instead, tick *replace* as well: the release then moves to the selected branch, with a new zip and the current notes.
 
 ## TimeShot 1.x
 
