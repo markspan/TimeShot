@@ -47,15 +47,19 @@ timeshot record --help                   # everything else
 
 ## Run from source
 
-With Python 3.12 or newer:
+With Python 3.12 or newer, in a virtual environment of its own:
 
 ```bash
+python -m venv .venv
+.venv\Scripts\activate    # on Windows; on macOS and Linux: source .venv/bin/activate
 pip install -e ".[dev]"
 timeshot                  # the desktop app
 timeshot devices          # the cameras TimeShot finds, and their modes
 ```
 
 `timeshot --synthetic 2 ...` replaces the cameras by two synthetic test cameras.
+
+Use a Python from [python.org](https://www.python.org/downloads/) (or your system's), not Anaconda's base environment. Anaconda brings its own, older Qt and ICU libraries, which clash with the Qt that PySide6 brings, so the desktop app fails to start ("DLL load failed while importing QtCore"); and installing TimeShot there can replace packages Anaconda's own tools depend on, such as NumPy.
 
 ## Development
 
