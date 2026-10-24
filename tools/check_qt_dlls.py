@@ -177,24 +177,90 @@ def static_check(pyside: Path, folders: list[tuple[str, Path]]) -> None:
         print("\nEvery DLL QtCore needs has a single, complete copy.")
 
 
+class Loader:
+    """Windows' loader functions, through ctypes (Windows only)."""
+
+    def __init__(self) -> None:
+        import ctypes  # noqa: PLC0415  (Windows only)
+
+        self.ctypes = ctypes
+        kernel32 = self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetModuleFileNameW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32)
+        kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+        kernel32.GetModuleHandleW.argtypes = (ctypes.c_wchar_p,)
+        kernel32.GetProcAddress.restype = ctypes.c_void_p
+        kernel32.GetProcAddress.argtypes = (ctypes.c_void_p, ctypes.c_char_p)
+
+    def loaded(self, name: str) -> int | None:
+        """The handle of the loaded DLL called ``name``, if one is loaded."""
+        handle: int | None = self.kernel32.GetModuleHandleW(name)
+        return handle
+
+    def load(self, name_or_path: str) -> int:
+        """Loads a DLL as Windows finds it (raises OSError if it cannot)."""
+        handle: int = self.ctypes.WinDLL(name_or_path)._handle
+        return handle
+
+    def file(self, handle: int) -> str:
+        buffer = self.ctypes.create_unicode_buffer(32768)
+        self.kernel32.GetModuleFileNameW(handle, buffer, len(buffer))
+        return str(buffer.value)
+
+    def has(self, handle: int, function: str) -> bool:
+        """Whether the DLL provides ``function``; follows forwarders and API sets as the loader does."""
+        return bool(self.kernel32.GetProcAddress(handle, function.encode()))
+
+
+def resolve_imports(loader: Loader, module: Path) -> None:
+    """Resolves each function ``module`` imports against the DLL Windows would use: the copy
+    already loaded, else the one next to the module, else wherever Windows finds it."""
+    pe = read(module)
+    if pe is None:
+        return
+    print(f"  {module.name}, its imports resolved against the loaded DLLs:")
+    problems = 0
+    for dll, functions in sorted(pe.imports().items()):
+        handle = loader.loaded(dll)
+        if not handle:
+            beside = module.parent / dll
+            try:
+                handle = loader.load(str(beside) if beside.is_file() else dll)
+            except OSError as error:
+                problems += 1
+                print(f"    {dll}: cannot be loaded ({error})")
+                continue
+        if missing := sorted(f for f in functions if not loader.has(handle, f)):
+            problems += 1
+            print(f"    {dll} ({loader.file(handle)}) LACKS {len(missing)}: {missing[:6]}")
+    if not problems:
+        print("    all imports resolve")
+
+
+def explain_failed_import(loader: Loader, pyside: Path) -> None:
+    """Finds the file Python loads for PySide6.QtCore and why Windows refuses it."""
+    # A version-specific name such as QtCore.cp312-win_amd64.pyd (left by another PySide6)
+    # wins over PySide6's QtCore.pyd.
+    try:
+        spec = importlib.util.find_spec("PySide6.QtCore")
+        origin = Path(spec.origin) if spec and spec.origin else pyside / "QtCore.pyd"
+    except ImportError:
+        origin = pyside / "QtCore.pyd"
+    print(f"  Python loads PySide6.QtCore from {origin}")
+    for found in sorted(pyside.glob("QtCore*")):
+        print(f"    in the folder: {found.name} ({found.stat().st_size:,} bytes)")
+    try:
+        loader.load(str(origin))
+        print(f"  {origin.name} loads as a plain DLL, so Python's import must look elsewhere")
+    except OSError as error:
+        print(f"  {origin.name} does not load as a plain DLL either: {error}")
+    for module in (pyside.parent / "shiboken6" / "shiboken6.abi3.dll", pyside / "pyside6.abi3.dll", origin):
+        resolve_imports(loader, module)
+
+
 def live_check(pyside: Path, names: list[str]) -> None:
-    """Imports TimeShot's app package and PySide6's QtCore; if that fails, resolves the imports of
-    QtCore and the PySide6 DLLs it needs the way Windows' loader does, naming each function the
-    loaded DLLs lack. Then lists which copies of ``names`` are loaded."""
-    import ctypes  # noqa: PLC0415  (Windows only)
-
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.GetModuleFileNameW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32)
-    kernel32.GetModuleHandleW.restype = ctypes.c_void_p
-    kernel32.GetModuleHandleW.argtypes = (ctypes.c_wchar_p,)
-    kernel32.GetProcAddress.restype = ctypes.c_void_p
-    kernel32.GetProcAddress.argtypes = (ctypes.c_void_p, ctypes.c_char_p)
-
-    def file_of(handle: int) -> str:
-        buffer = ctypes.create_unicode_buffer(32768)
-        kernel32.GetModuleFileNameW(handle, buffer, len(buffer))
-        return buffer.value
-
+    """Imports TimeShot's app package and PySide6's QtCore, explains a failure, then lists which
+    copies of ``names`` are loaded."""
+    loader = Loader()
     try:
         import timeshot.gui  # noqa: PLC0415  (loads the right DLLs first, if this checkout does)
 
@@ -210,38 +276,11 @@ def live_check(pyside: Path, names: list[str]) -> None:
         print(f"PySide6.QtCore imported fine (Qt {PySide6.QtCore.qVersion()})")
     except ImportError as error:
         print(f"PySide6.QtCore failed: {error}")
-        # GetProcAddress follows forwarded functions and API sets, exactly as the loader does.
-        for module in (
-            pyside.parent / "shiboken6" / "shiboken6.abi3.dll",
-            pyside / "pyside6.abi3.dll",
-            pyside / "QtCore.pyd",
-        ):
-            pe = read(module)
-            if pe is None:
-                continue
-            print(f"  {module.name}, its imports resolved against the loaded DLLs:")
-            problems = 0
-            for dll, functions in sorted(pe.imports().items()):
-                # The copy already loaded, else the one next to the module, else as Windows finds it.
-                handle = kernel32.GetModuleHandleW(dll)
-                if not handle:
-                    beside = module.parent / dll
-                    try:
-                        handle = ctypes.WinDLL(str(beside) if beside.is_file() else dll)._handle
-                    except OSError as load_error:
-                        problems += 1
-                        print(f"    {dll}: cannot be loaded ({load_error})")
-                        continue
-                missing = sorted(f for f in functions if not kernel32.GetProcAddress(handle, f.encode()))
-                if missing:
-                    problems += 1
-                    print(f"    {dll} ({file_of(handle)}) LACKS {len(missing)}: {missing[:6]}")
-            if not problems:
-                print("    all imports resolve")
+        explain_failed_import(loader, pyside)
     print("Loaded now:")
     for name in names:
-        if handle := kernel32.GetModuleHandleW(name):
-            print(f"    {name:24} {file_of(handle)}")
+        if handle := loader.loaded(name):
+            print(f"    {name:24} {loader.file(handle)}")
 
 
 def main() -> int:
