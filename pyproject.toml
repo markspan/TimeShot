@@ -45,11 +45,17 @@ line-length = 110
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PL", "PT"]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PL", "PT", "D"]
 ignore = [
     "PLR0913",  # too many arguments: dataclass-like constructors read better flat
     "PLR2004",  # magic values: fine in tests and pixel arithmetic
 ]
+
+[tool.ruff.lint.pydocstyle]
+# Every module, class and function has a docstring: a one-line summary, then, where it helps,
+# a description and Args, Returns and Raises sections. tests/test_docs.py also holds private
+# functions and methods to this, which ruff does not check.
+convention = "google"
 
 [tool.mypy]
 python_version = "3.12"

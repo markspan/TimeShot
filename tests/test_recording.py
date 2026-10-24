@@ -1,4 +1,4 @@
-"""The parts of a camera's recording: frame label, video writer, preview slot and recorder."""
+"""The parts of a camera's recording: frame label, video writer, preview slot, recorder and H.264."""
 
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ from helpers import (
     wait_until,
 )
 
+from timeshot import h264
 from timeshot.cameras.base import RAW, CameraMode, Frame
 from timeshot.cameras.synthetic import SyntheticBackend, SyntheticStream
-from timeshot.frames import H264_ENCODERS, H264Encoder, available_h264_encoder, works
 from timeshot.recording.label import COLOR, draw_frame_number
 from timeshot.recording.preview import MAX_HEIGHT, MAX_WIDTH, PreviewSlot, preview_size
 from timeshot.recording.recorder import CameraRecorder, PreviewMaker
@@ -31,7 +31,17 @@ RAW_MODE = CameraMode(640, 480, 30.0, RAW, "yuyv422")
 
 
 def synthetic_frames(mode: CameraMode, count: int) -> list[Frame]:
-    """Frames numbered 0, 1, 2, ... (unpaced: these tests are about the writer, not timing)."""
+    """Frames of a synthetic camera, numbered 0, 1, 2 and so on.
+
+    Unpaced: these tests are about the writer, not about timing.
+
+    Args:
+        mode: The mode the camera delivers in.
+        count: How many frames.
+
+    Returns:
+        The frames.
+    """
     stream = SyntheticStream(mode, paced=False)
     try:
         return [stream.read() for _ in range(count)]
@@ -43,6 +53,7 @@ def synthetic_frames(mode: CameraMode, count: int) -> list[Frame]:
 
 
 def test_frame_number_is_drawn_top_left() -> None:
+    """The burned-in number sits in the top-left corner, in the label color."""
     rgb = np.zeros((720, 1280, 3), np.uint8)
     draw_frame_number(rgb, 1234)
     painted = np.all(rgb == COLOR, axis=2)
@@ -53,6 +64,7 @@ def test_frame_number_is_drawn_top_left() -> None:
 
 
 def test_different_numbers_look_different_and_tiny_images_survive() -> None:
+    """Each number draws differently, and a number too large for the picture is clipped."""
     images = []
     for number in (1, 7):
         rgb = np.zeros((480, 640, 3), np.uint8)
@@ -66,6 +78,7 @@ def test_different_numbers_look_different_and_tiny_images_survive() -> None:
 
 
 def test_camera_jpeg_frames_are_written_untouched(tmp_path: Path) -> None:
+    """Camera JPEG goes into an AVI byte for byte: identical quality, no encoding."""
     frames = synthetic_frames(MODE, 20)
     writer = VideoWriter(tmp_path / "out.avi", MODE)
     assert writer.passthrough
@@ -80,6 +93,7 @@ def test_camera_jpeg_frames_are_written_untouched(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("suffix", [".avi", ".mkv"])
 def test_raw_frames_are_encoded_in_order(tmp_path: Path, suffix: str) -> None:
+    """Raw frames are encoded as JPEG, every one, in the order they came."""
     path = tmp_path / f"out{suffix}"
     writer = VideoWriter(path, RAW_MODE)
     assert not writer.passthrough
@@ -90,6 +104,7 @@ def test_raw_frames_are_encoded_in_order(tmp_path: Path, suffix: str) -> None:
 
 
 def test_frame_numbers_are_burned_in_when_asked(tmp_path: Path) -> None:
+    """With frame numbers, camera JPEG is re-encoded with the number drawn in."""
     path = tmp_path / "numbered.avi"
     writer = VideoWriter(path, MODE, frame_numbers=True)
     assert not writer.passthrough
@@ -104,6 +119,7 @@ def test_frame_numbers_are_burned_in_when_asked(tmp_path: Path) -> None:
 
 
 def test_a_damaged_frame_is_replaced_by_the_previous_one(tmp_path: Path) -> None:
+    """A frame that cannot be decoded repeats the one before, so later frames keep their index."""
     frames = synthetic_frames(MODE, 5)
     frames[2] = Frame(b"\xff\xd8 not a JPEG \xff\xd9", MODE)
     path = tmp_path / "damaged.avi"
@@ -116,6 +132,7 @@ def test_a_damaged_frame_is_replaced_by_the_previous_one(tmp_path: Path) -> None
 
 
 def test_unsupported_file_types_are_refused(tmp_path: Path) -> None:
+    """An unknown extension is refused before any file is created."""
     with pytest.raises(ValueError, match="unsupported video file type"):
         VideoWriter(tmp_path / "out.mov", MODE)
     assert not (tmp_path / "out.mov").exists()
@@ -125,6 +142,7 @@ def test_unsupported_file_types_are_refused(tmp_path: Path) -> None:
 
 
 def test_preview_slot_hands_over_the_newest_image() -> None:
+    """The slot gives the newest image once, and refuses one larger than the preview box."""
     slot = PreviewSlot.create(multiprocessing.get_context("spawn"))
     try:
         assert slot.read() is None
@@ -141,6 +159,7 @@ def test_preview_slot_hands_over_the_newest_image() -> None:
 
 
 def test_preview_size_fits_the_box_and_keeps_the_aspect_ratio() -> None:
+    """Previews fit the preview box, keep their aspect ratio, and are never enlarged."""
     assert preview_size(1920, 1080) == (640, 360)
     assert preview_size(640, 480) == (480, 360)
     assert preview_size(320, 240) == (320, 240)
@@ -153,6 +172,7 @@ def test_preview_size_fits_the_box_and_keeps_the_aspect_ratio() -> None:
 def test_recorder_sends_one_marker_per_written_frame(
     tmp_path: Path, stream_name: str, mode: CameraMode, frame_numbers: bool
 ) -> None:
+    """The heart of TimeShot: marker N belongs to frame N, and LSL stamps rise with the frames."""
     recorder = CameraRecorder(SyntheticBackend(1).open("0", mode), camera_name="Synthetic")
     recorder.start()
     try:
@@ -173,6 +193,7 @@ def test_recorder_sends_one_marker_per_written_frame(
 
 
 def test_recording_needs_an_open_stream_and_creates_no_file_otherwise(tmp_path: Path) -> None:
+    """Without an LSL stream there is no recording: frames without markers would be useless."""
     recorder = CameraRecorder(SyntheticBackend(1).open("0", MODE), camera_name="Synthetic")
     recorder.start()
     try:
@@ -187,6 +208,7 @@ def test_recording_needs_an_open_stream_and_creates_no_file_otherwise(tmp_path: 
 
 
 def test_preview_maker_publishes_small_images() -> None:
+    """Previews arrive steadily, scaled to the preview box."""
     recorder = CameraRecorder(
         SyntheticBackend(1).open("0", CameraMode(1280, 720, 30.0)), camera_name="Synthetic"
     )
@@ -206,13 +228,21 @@ def test_preview_maker_publishes_small_images() -> None:
 
 
 def mp4_packets(path: Path) -> list[tuple[int | None, int | None]]:
-    """(pts, dts) of every video packet in the file."""
+    """The timestamps of every video packet in a file.
+
+    Args:
+        path: The video file.
+
+    Returns:
+        (presentation timestamp, decoding timestamp) of each packet, in file order.
+    """
     with av.open(str(path)) as container:
         return [(p.pts, p.dts) for p in container.demux(video=0) if p.size]
 
 
 @pytest.mark.parametrize("mode", [MODE, RAW_MODE])
 def test_h264_mp4_keeps_every_frame_in_order(tmp_path: Path, mode: CameraMode) -> None:
+    """H.264 keeps every frame, in display order (no B-frames), in a fragmented MP4."""
     path = tmp_path / "out.mp4"
     writer = VideoWriter(path, mode)
     assert writer.description.startswith("H.264")
@@ -228,6 +258,7 @@ def test_h264_mp4_keeps_every_frame_in_order(tmp_path: Path, mode: CameraMode) -
 
 
 def test_h264_with_frame_numbers(tmp_path: Path) -> None:
+    """Frame numbers can be burned into H.264 recordings too."""
     path = tmp_path / "numbered.mp4"
     writer = VideoWriter(path, MODE, frame_numbers=True)
     for index, frame in enumerate(synthetic_frames(MODE, 5)):
@@ -237,8 +268,9 @@ def test_h264_with_frame_numbers(tmp_path: Path) -> None:
 
 
 def test_h264_falls_back_to_x264(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    missing = H264Encoder("h264_missing", "a missing encoder", "nv12")
-    monkeypatch.setattr("timeshot.recording.writer.available_h264_encoder", lambda: missing)
+    """An encoder that refuses the camera's pictures gives way to x264."""
+    missing = h264.H264Encoder("h264_missing", "a missing encoder", "nv12")
+    monkeypatch.setattr(h264, "available_encoder", lambda: missing)
     writer = VideoWriter(tmp_path / "out.mp4", MODE)
     for index, frame in enumerate(synthetic_frames(MODE, 3)):
         writer.add(index, frame)
@@ -247,6 +279,7 @@ def test_h264_falls_back_to_x264(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_the_chosen_h264_encoder_works() -> None:
-    encoder = available_h264_encoder()
-    assert encoder in H264_ENCODERS
-    assert works(encoder)
+    """The encoder chosen for this computer encodes pictures here."""
+    encoder = h264.available_encoder()
+    assert encoder in h264.ENCODERS
+    assert h264.encoder_works(encoder)

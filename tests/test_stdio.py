@@ -37,6 +37,14 @@ STATUS_STACK_BUFFER_OVERRUN = 0xC0000409
 
 
 def write_narrow_text(reset: bool) -> subprocess.CompletedProcess[bytes]:
+    """Runs NARROW_WRITE in a fresh Python process.
+
+    Args:
+        reset: Whether the process calls reset_c_stream_modes() before writing.
+
+    Returns:
+        How the process ended, and what it wrote.
+    """
     argument = "reset" if reset else "keep"
     command = [sys.executable, "-c", NARROW_WRITE, argument]
     return subprocess.run(command, capture_output=True, timeout=60, check=False)
@@ -48,6 +56,7 @@ def test_narrow_text_to_a_utf8_mode_stream_ends_the_process() -> None:
 
 
 def test_after_the_reset_narrow_text_is_written() -> None:
+    """With the reset, native code writes to the C runtime's stderr as usual."""
     result = write_narrow_text(reset=True)
     assert result.returncode == 0, result.stderr
     assert b"narrow text" in result.stderr

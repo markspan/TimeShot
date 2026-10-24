@@ -1,61 +1,56 @@
-"""TimeShot's main window: session settings, a card per camera, and the record button."""
+"""TimeShot's main window: the settings for every camera, a card per camera, and the record button.
+
+The window ties its parts together: the :class:`~timeshot.gui.session_bar.SessionBar` at the
+top, the :class:`~timeshot.gui.card_grid.CardGrid` of :class:`~timeshot.gui.camera_card.CameraCard`
+in the middle and the :class:`~timeshot.gui.record_bar.RecordBar` at the bottom. It finds the
+cameras, keeps the settings checked and remembered, and drives the
+:class:`~timeshot.rig.CameraRig`, whose state a timer shows several times per second.
+"""
 
 from __future__ import annotations
 
 import concurrent.futures
 import functools
-import html
 import logging
-import shutil
 from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer
-from PySide6.QtGui import QCloseEvent, QResizeEvent
-from PySide6.QtWidgets import (
-    QApplication,
-    QCheckBox,
-    QComboBox,
-    QFileDialog,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMainWindow,
-    QMessageBox,
-    QPushButton,
-    QScrollArea,
-    QSizePolicy,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
 from timeshot import __version__
 from timeshot.cameras import CameraError, CameraInfo, default_backend_name, list_cameras
 from timeshot.gui.camera_card import CameraCard
-from timeshot.gui.theme import ACCENT, RECORD, WARNING, app_icon
-from timeshot.session import CameraSetup, Phase, Problem, Session, check, with_extension
-from timeshot.settings import Settings, Templates
+from timeshot.gui.card_grid import CardGrid
+from timeshot.gui.record_bar import RecordBar
+from timeshot.gui.session_bar import SessionBar
+from timeshot.gui.theme import SPACING, app_icon
+from timeshot.rig import CameraRig, Phase
+from timeshot.settings import Settings
+from timeshot.setup import CameraSetup, Problem, check
 
 log = logging.getLogger(__name__)
 
 # How often the window takes in the recorders' reports and previews (previews come at 20 fps).
 REFRESH_MS = 50
-CARD_WIDTH = 440  # the grid gets as many columns of about this width as fit
-# The formats offered; a file name's extension decides its format (see recording.writer).
-FILE_FORMATS = (("Camera JPEG (.avi)", ".avi"), ("Camera JPEG (.mkv)", ".mkv"), ("H.264 (.mp4)", ".mp4"))
-
-_RECORD_STYLE = (
-    f"QPushButton {{ background: {RECORD}; color: white; font-weight: bold; border: none;"
-    " border-radius: 8px; } QPushButton:disabled { background: palette(mid); }"
-)
-_PLAIN_STYLE = (
-    "QPushButton { background: palette(button); border: 1px solid palette(mid); border-radius: 8px; }"
-    f" QPushButton:hover {{ border-color: {ACCENT}; }}"
-)
 
 
 class MainWindow(QMainWindow):
+    """TimeShot's main window.
+
+    Attributes:
+        rig: The recorder processes of the enabled cameras.
+        session_bar: The settings for every camera, at the top.
+        card_grid: The camera cards, in the middle.
+        record_bar: The record button and the rig's state, at the bottom.
+    """
+
     def __init__(self, settings_path: Path) -> None:
+        """Builds the window, and starts looking for cameras.
+
+        Args:
+            settings_path: The settings file, read now and written as settings change.
+        """
         super().__init__()
         self.setWindowTitle("TimeShot")
         self.setWindowIcon(app_icon())
@@ -63,253 +58,161 @@ class MainWindow(QMainWindow):
         self._settings_path = settings_path
         self._settings = Settings.load(settings_path)
         if not self._settings.folder:
-            videos = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.MoviesLocation)
-            self._settings.folder = str(Path(videos or Path.home()) / "TimeShot")
-        self._session = Session(default_backend_name())
-        self._setups: list[CameraSetup] = []
-        self._cards: dict[str, CameraCard] = {}
-        self._problems: list[Problem] = []
-        self._scan: concurrent.futures.Future[list[CameraInfo]] | None = None
-        self._executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="camera scan"
-        )
+            self._settings.folder = str(_suggested_folder())
 
-        self.setCentralWidget(self._build())
+        self.rig = CameraRig()
+        self._setups: list[CameraSetup] = []
+        self._cards: dict[str, CameraCard] = {}  # by camera key
+        self._problems: list[Problem] = []
+        # Looking for cameras takes a few seconds, so it runs in the background.
+        self._scanner = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="camera scan")
+        self._scan: concurrent.futures.Future[list[CameraInfo]] | None = None
+
+        self.session_bar = SessionBar(self._settings)
+        self.card_grid = CardGrid()
+        self.record_bar = RecordBar()
+        self.setCentralWidget(self._central_widget())
+        self.statusBar().showMessage(
+            f"TimeShot {__version__} · cameras via {default_backend_name()} · settings in {settings_path}"
+        )
+        self.session_bar.session_changed.connect(self._session_changed)
+        self.session_bar.changed.connect(self._settings_changed)
+        self.session_bar.format_chosen.connect(self._format_chosen)
+        self.session_bar.find_cameras.connect(self.find_cameras)
+        self.record_bar.record_clicked.connect(self._record_clicked)
+
         self._timer = QTimer(self)
         self._timer.setInterval(REFRESH_MS)
         self._timer.timeout.connect(self._refresh)
         self._timer.start()
-        self.rescan()
+        self.find_cameras()
 
-    # ── layout ───────────────────────────────────────────────────────────────
-
-    def _build(self) -> QWidget:
+    def _central_widget(self) -> QWidget:
+        """The session bar, the card grid (taking the room left) and the record bar, stacked."""
         root = QWidget()
         layout = QVBoxLayout(root)
         layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(12)
-        layout.addLayout(self._build_top_bar())
-        layout.addWidget(self._build_card_area(), 1)
-        layout.addLayout(self._build_bottom_bar())
-        self.statusBar().showMessage(
-            f"TimeShot {__version__} · cameras via {default_backend_name()}"
-            f" · settings in {self._settings_path}"
-        )
+        layout.setSpacing(SPACING)
+        layout.addWidget(self.session_bar)
+        layout.addWidget(self.card_grid, 1)
+        layout.addWidget(self.record_bar)
         return root
-
-    def _build_top_bar(self) -> QVBoxLayout:
-        """Session, folder and recording options, which apply to every camera."""
-        self.session_edit = QLineEdit(self._settings.session)
-        self.session_edit.setMaximumWidth(140)
-        self.session_edit.setToolTip("Fills in {s} in the names: a subject or session number")
-        self.session_edit.textChanged.connect(self._session_changed)
-        self.folder_edit = QLineEdit(self._settings.folder)
-        self.folder_edit.setToolTip("Where the video files go")
-        self.folder_edit.textChanged.connect(self._settings_changed)
-        browse = QPushButton("Browse…")
-        browse.clicked.connect(self._browse)
-        self.wait_box = QCheckBox("Wait for LabRecorder")
-        self.wait_box.setChecked(self._settings.wait_for_labrecorder)
-        self.wait_box.setToolTip(
-            "Start recording only once LabRecorder records every camera's stream,\n"
-            "so that no frame goes without its marker in the XDF file"
-        )
-        self.wait_box.toggled.connect(self._settings_changed)
-        self.numbers_box = QCheckBox("Burn frame numbers into the video")
-        self.numbers_box.setChecked(self._settings.frame_numbers)
-        self.numbers_box.setToolTip(
-            "Draws each frame's number into its picture. The frames are then re-encoded,\n"
-            "which takes much more CPU; without it, the camera's own JPEG frames are\n"
-            "recorded untouched and the numbers are in the LSL markers only."
-        )
-        self.numbers_box.toggled.connect(self._settings_changed)
-        self.format_box = QComboBox()
-        for label, extension in FILE_FORMATS:
-            self.format_box.addItem(label, extension)
-        self.format_box.setToolTip(
-            "Camera JPEG: the camera's own frames, untouched: identical quality, little CPU, large files.\n"
-            "H.264: files about ten times smaller, encoded by the graphics hardware if it can,\n"
-            "else by the CPU. Sets the extension of every camera's file name."
-        )
-        self.format_box.activated.connect(self._format_chosen)
-        self.rescan_button = QPushButton("Find cameras")
-        self.rescan_button.setToolTip("Look for cameras again, e.g. after plugging one in")
-        self.rescan_button.clicked.connect(self.rescan)
-
-        where = QHBoxLayout()  # where the recordings go
-        where.addWidget(QLabel("Session"))
-        where.addWidget(self.session_edit)
-        where.addSpacing(16)
-        where.addWidget(QLabel("Folder"))
-        where.addWidget(self.folder_edit, 1)
-        where.addWidget(browse)
-        where.addSpacing(16)
-        where.addWidget(self.rescan_button)
-        how = QHBoxLayout()  # how they are recorded
-        how.addWidget(QLabel("Format"))
-        how.addWidget(self.format_box)
-        how.addSpacing(16)
-        how.addWidget(self.wait_box)
-        how.addSpacing(16)
-        how.addWidget(self.numbers_box)
-        how.addStretch(1)
-        top = QVBoxLayout()
-        top.addLayout(where)
-        top.addLayout(how)
-        return top
-
-    def _build_card_area(self) -> QScrollArea:
-        """A scrolling grid for the camera cards, showing a message until cameras are found."""
-        self.grid = QGridLayout()
-        self.grid.setSpacing(14)
-        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
-        grid_host = QWidget()
-        grid_host.setLayout(self.grid)
-        self.placeholder = QLabel("Looking for cameras…")
-        self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.placeholder.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.grid.addWidget(self.placeholder, 0, 0)
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        self._scroll.setWidget(grid_host)
-        return self._scroll
-
-    def _build_bottom_bar(self) -> QHBoxLayout:
-        """The record button, what the session is doing, and the free disk space."""
-        self.record_button = QPushButton("Record")
-        self.record_button.setMinimumSize(170, 44)
-        self.record_button.clicked.connect(self._record_clicked)
-        self.phase_label = QLabel()
-        self.phase_label.setTextFormat(Qt.TextFormat.RichText)
-        self.phase_label.setWordWrap(True)
-        self.disk_label = QLabel()
-        self.disk_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        bottom = QHBoxLayout()
-        bottom.addWidget(self.record_button)
-        bottom.addSpacing(12)
-        bottom.addWidget(self.phase_label, 1)
-        bottom.addWidget(self.disk_label)
-        return bottom
-
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        super().resizeEvent(event)
-        self._lay_out_cards()
-
-    def _lay_out_cards(self) -> None:
-        if not self._cards:
-            return
-        columns = max(1, self._scroll.viewport().width() // CARD_WIDTH)
-        for position, card in enumerate(self._cards.values()):
-            self.grid.addWidget(card, position // columns, position % columns)  # re-adding moves it
-        for column in range(self.grid.columnCount()):
-            self.grid.setColumnStretch(column, 1 if column < columns else 0)
 
     # ── cameras ──────────────────────────────────────────────────────────────
 
-    def rescan(self) -> None:
-        """Looks for cameras in the background (closing the open ones first: an open camera
-        may not report its modes)."""
-        if self._session.phase is not Phase.PREVIEW or self._scan is not None:
+    def find_cameras(self) -> None:
+        """Looks for cameras in the background; :meth:`_refresh` picks up what it finds.
+
+        The open cameras are closed first: an open camera may not report its modes. Does
+        nothing while a recording runs or a search is under way.
+        """
+        if self.rig.phase is not Phase.PREVIEW or self._scan is not None:
             return
         self._remember()
-        self._session.shutdown()
-        for card in self._cards.values():
-            card.deleteLater()
+        self.rig.shutdown()
         self._cards.clear()
         self._setups = []
-        self.placeholder.setText("Looking for cameras…")
-        self.placeholder.show()
-        self.grid.addWidget(self.placeholder, 0, 0)
-        self.rescan_button.setEnabled(False)
-        self._scan = self._executor.submit(list_cameras)
+        self.card_grid.show_message("Looking for cameras…")
+        self.session_bar.set_finding_enabled(False)
+        self._scan = self._scanner.submit(list_cameras)
 
-    def _scan_finished(self, scan: concurrent.futures.Future[list[CameraInfo]]) -> None:
+    def _cameras_found(self, scan: concurrent.futures.Future[list[CameraInfo]]) -> None:
+        """Shows a card for each camera found, with its remembered settings, and opens the cameras.
+
+        Args:
+            scan: The finished search.
+        """
         self._scan = None
-        self.rescan_button.setEnabled(True)
+        self.session_bar.set_finding_enabled(True)
         try:
             cameras = scan.result()
         except CameraError as error:
-            self.placeholder.setText(f"Could not look for cameras: {error}")
+            self.card_grid.show_message(f"Could not look for cameras: {error}")
             return
         if not cameras:
-            self.placeholder.setText("No cameras found. Plug one in and click “Find cameras”.")
+            self.card_grid.show_message("No cameras found. Plug one in and click “Find cameras”.")
             return
-        self.placeholder.hide()
         self._setups = self._settings.setups(cameras)
-        for setup in self._setups:
-            card = CameraCard(setup, self.session_edit.text())
-            card.changed.connect(self._settings_changed)
-            card.reopen.connect(self._open_cameras)
-            card.make_default.connect(functools.partial(self._make_default, card))
-            card.set_default_templates(self._default_templates())
-            self._cards[setup.camera.key] = card
-        self._lay_out_cards()
+        self._cards = {setup.camera.key: self._card(setup) for setup in self._setups}
+        self.card_grid.set_cards(self._cards.values())
         self._open_cameras()
         self._settings_changed()
 
+    def _card(self, setup: CameraSetup) -> CameraCard:
+        """A camera's card, connected to the window.
+
+        Args:
+            setup: The camera's settings, which the card edits.
+
+        Returns:
+            The card.
+        """
+        card = CameraCard(setup, self.session_bar.session)
+        card.changed.connect(self._settings_changed)
+        card.reopen.connect(self._open_cameras)
+        card.make_default.connect(functools.partial(self._make_default, card))
+        card.set_default_templates(self._settings.templates)
+        return card
+
     def _open_cameras(self) -> None:
-        if self._session.phase is Phase.PREVIEW:
-            self._session.preview(self._setups)
+        """Opens the enabled cameras in their chosen modes, and closes the others (between recordings)."""
+        if self.rig.phase is Phase.PREVIEW:
+            self.rig.preview(self._setups)
 
     # ── settings ─────────────────────────────────────────────────────────────
 
-    def _session_changed(self, text: str) -> None:
+    def _session_changed(self, session: str) -> None:
+        """Shows every camera's names for the new session, and checks them.
+
+        Args:
+            session: The new session.
+        """
         for card in self._cards.values():
-            card.set_session(text)
+            card.set_session(session)
         self._settings_changed()
 
-    def _browse(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Folder for the video files", self.folder_edit.text())
-        if folder:
-            self.folder_edit.setText(folder)
+    def _format_chosen(self, extension: str) -> None:
+        """Gives every camera's file name, and that of cameras yet to come, the chosen format.
 
-    def _format_chosen(self, index: int) -> None:
-        extension = self.format_box.itemData(index)
+        Args:
+            extension: The format's extension, e.g. ".mp4".
+        """
         for card in self._cards.values():
             card.set_file_extension(extension)
-        templates = self._settings.templates  # new cameras start with the chosen format too
-        templates.file = with_extension(templates.file, extension)
+        self._settings.templates = self._settings.templates.with_extension(extension)
         self._show_default_templates()
         self._settings_changed()
 
     def _make_default(self, card: CameraCard) -> None:
-        """New cameras start with this camera's name templates."""
-        setup = card.setup
-        self._settings.templates = Templates(setup.name, setup.stream, setup.file)
+        """Makes a camera's name templates the ones new cameras start with, and saves them.
+
+        Args:
+            card: The camera's card.
+        """
+        self._settings.templates = card.setup.templates
         self._show_default_templates()
         self._remember()
 
-    def _default_templates(self) -> tuple[str, str, str]:
-        templates = self._settings.templates
-        return templates.name, templates.stream, templates.file
-
     def _show_default_templates(self) -> None:
+        """Tells every card the templates new cameras start with."""
         for card in self._cards.values():
-            card.set_default_templates(self._default_templates())
+            card.set_default_templates(self._settings.templates)
 
     def _settings_changed(self) -> None:
-        problems = check(self._setups, self.session_edit.text(), self._folder())
+        """Checks the settings after an edit: shows each card its problems, and the common format."""
+        self._problems = check(self._setups, self.session_bar.session, self.session_bar.folder)
         for key, card in self._cards.items():
-            card.set_problems([p for p in problems if p.camera == key])
-        self._problems = problems
-        # The format the cameras' file names agree on; none shown if they differ.
-        extensions = {Path(s.file).suffix.lower() for s in self._setups if s.enabled}
-        self.format_box.blockSignals(True)
-        self.format_box.setCurrentIndex(
-            self.format_box.findData(extensions.pop()) if len(extensions) == 1 else -1
-        )
-        self.format_box.blockSignals(False)
-
-    def _folder(self) -> Path:
-        return Path(self.folder_edit.text().strip() or ".").expanduser()
+            card.set_problems([problem for problem in self._problems if problem.camera == key])
+        extensions = {Path(setup.templates.file).suffix.lower() for setup in self._setups if setup.enabled}
+        self.session_bar.show_format(extensions.pop() if len(extensions) == 1 else None)
 
     def _remember(self) -> None:
+        """Saves the current settings to the settings file (a failure is only logged)."""
         settings = self._settings
-        settings.session = self.session_edit.text()
-        settings.folder = self.folder_edit.text()
-        settings.wait_for_labrecorder = self.wait_box.isChecked()
-        settings.frame_numbers = self.numbers_box.isChecked()
+        settings.session = self.session_bar.session
+        settings.folder = self.session_bar.folder_text
+        settings.wait_for_labrecorder = self.session_bar.wait_for_labrecorder
+        settings.frame_numbers = self.session_bar.frame_numbers
         settings.remember(self._setups)
         try:
             settings.save(self._settings_path)
@@ -319,158 +222,124 @@ class MainWindow(QMainWindow):
     # ── recording ────────────────────────────────────────────────────────────
 
     def _record_clicked(self) -> None:
-        phase = self._session.phase
-        if phase is Phase.PREVIEW:
-            self.start_recording()
-        elif phase is Phase.WAITING:
-            self._session.cancel()
-        elif phase is Phase.RECORDING:
-            answer = QMessageBox.question(
-                self,
-                "Stop recording",
-                "Stop the recording?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if answer == QMessageBox.StandardButton.Yes:
-                self._session.stop()
+        """Records, cancels the waiting for LabRecorder, or stops the recording (once confirmed)."""
+        match self.rig.phase:
+            case Phase.PREVIEW:
+                self.start_recording()
+            case Phase.WAITING:
+                self.rig.cancel()
+            case Phase.RECORDING:
+                if self._ask("Stop recording", "Stop the recording?"):
+                    self.rig.stop()
 
     def start_recording(self, *, confirm: bool = True) -> bool:
-        """Starts a recording with the current settings; asks before overwriting files."""
+        """Starts a recording with the current settings.
+
+        Args:
+            confirm: Whether to ask before overwriting existing files.
+
+        Returns:
+            Whether the recording started (it may wait for LabRecorder first). If not, the
+            user has been told why, or declined to overwrite files.
+        """
         self._settings_changed()
-        blocking = [p for p in self._problems if not p.confirm]
+        blocking = [problem.message for problem in self._problems if not problem.confirm]
         if blocking:
-            QMessageBox.warning(self, "Cannot record", "\n".join(p.message for p in blocking))
+            QMessageBox.warning(self, "Cannot record", "\n".join(blocking))
             return False
-        overwrite = [p.message for p in self._problems if p.confirm]
-        if overwrite and confirm:
-            answer = QMessageBox.question(
-                self,
-                "Overwrite recordings?",
-                "\n".join(overwrite) + "\n\nOverwrite them?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+        overwritten = [problem.message for problem in self._problems if problem.confirm]
+        if (
+            overwritten
+            and confirm
+            and not self._ask(
+                "Overwrite recordings?", "\n".join(overwritten) + "\n\nOverwrite them?", default_no=True
             )
-            if answer != QMessageBox.StandardButton.Yes:
-                return False
+        ):
+            return False
         self._remember()
         try:
-            self._session.start(
-                self.session_edit.text(),
-                self._folder(),
-                wait_for_consumers=self.wait_box.isChecked(),
-                frame_numbers=self.numbers_box.isChecked(),
+            self.rig.start(
+                self.session_bar.session,
+                self.session_bar.folder,
+                wait_for_consumers=self.session_bar.wait_for_labrecorder,
+                frame_numbers=self.session_bar.frame_numbers,
             )
         except (RuntimeError, OSError) as error:
             QMessageBox.warning(self, "Cannot record", str(error))
             return False
         return True
 
-    @property
-    def session(self) -> Session:
-        return self._session
+    def _ask(self, title: str, question: str, *, default_no: bool = False) -> bool:
+        """Asks a yes-or-no question in a dialog.
 
-    # ── periodic refresh ─────────────────────────────────────────────────────
+        Args:
+            title: The dialog's title.
+            question: The question.
+            default_no: Whether "No" is the default answer (for a question whose "Yes" loses something).
+
+        Returns:
+            Whether the answer is yes.
+        """
+        buttons = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        default = QMessageBox.StandardButton.No if default_no else QMessageBox.StandardButton.NoButton
+        return QMessageBox.question(self, title, question, buttons, default) == QMessageBox.StandardButton.Yes
+
+    # ── refresh ──────────────────────────────────────────────────────────────
 
     def _refresh(self) -> None:
+        """Brings the window up to date, every :data:`REFRESH_MS`.
+
+        Picks up the cameras a search found, takes in the recorder processes' reports, and
+        shows each camera's state and preview, what the rig is doing and the free disk space.
+        """
         if self._scan is not None and self._scan.done():
-            self._scan_finished(self._scan)
-        session = self._session
-        session.poll()
-        phase = session.phase
+            self._cameras_found(self._scan)
+        self.rig.poll()
+        phase = self.rig.phase
+        locked = phase is not Phase.PREVIEW
         for key, card in self._cards.items():
-            state = session.cameras.get(key)
-            card.set_locked(phase is not Phase.PREVIEW)
+            state = self.rig.cameras.get(key)
+            card.set_locked(locked)
             card.show_state(state, phase)
             if state is not None and (image := state.process.preview.read()) is not None:
                 card.show_preview(image)
-        self.rescan_button.setEnabled(phase is Phase.PREVIEW and self._scan is None)
-        for widget in (self.session_edit, self.folder_edit, self.format_box, self.wait_box, self.numbers_box):
-            widget.setEnabled(phase is Phase.PREVIEW)
-        self._show_phase(phase)
-        self._show_disk()
+        self.session_bar.set_locked(locked)
+        self.session_bar.set_finding_enabled(not locked and self._scan is None)
+        can_record = self.rig.ready and all(problem.confirm for problem in self._problems)
+        self.record_bar.show_phase(self.rig, self.session_bar.session, can_record=can_record)
+        self.record_bar.show_disk(self.session_bar.folder, self._bytes_per_second())
 
-    def _show_phase(self, phase: Phase) -> None:
-        session = self._session
-        button = self.record_button
-        if phase is Phase.PREVIEW:
-            ready = bool(session.cameras) and all(s.ready for s in session.cameras.values())
-            button.setText("●  Record")
-            button.setEnabled(ready and not any(not p.confirm for p in self._problems))
-            button.setStyleSheet(_RECORD_STYLE)
-            self.phase_label.setText(self._summary())
-        elif phase is Phase.WAITING:
-            connected = sum(bool(s.stats and s.stats.consumers) for s in session.cameras.values())
-            streams = ", ".join(
-                html.escape(s.setup.names(self.session_edit.text())[1]) for s in session.cameras.values()
-            )
-            button.setText("Cancel")
-            button.setEnabled(True)
-            button.setStyleSheet(_PLAIN_STYLE)
-            self.phase_label.setText(
-                f"<span style='color:{WARNING}'><b>Waiting for LabRecorder</b></span>: "
-                f"record {streams} in LabRecorder ({connected} of {len(session.cameras)} connected)."
-            )
-        elif phase is Phase.RECORDING:
-            seconds = int(session.elapsed)
-            button.setText("■  Stop")
-            button.setEnabled(True)
-            button.setStyleSheet(_PLAIN_STYLE + " QPushButton { font-weight: bold; }")
-            self.phase_label.setText(
-                f"<span style='color:{RECORD}'><b>● Recording</b></span> "
-                f"{seconds // 3600}:{seconds // 60 % 60:02}:{seconds % 60:02}"
-            )
-        else:
-            button.setText("Finishing…")
-            button.setEnabled(False)
-            button.setStyleSheet(_PLAIN_STYLE)
-            self.phase_label.setText("Completing the video files…")
-
-    def _summary(self) -> str:
-        results = self._session.results
-        if not results:
-            return ""
-        frames = sum(r.file.frames_written for r in results.values())
-        bad = [key for key, r in results.items() if not r.ok]
-        if bad:
-            cameras = html.escape(", ".join(bad))
-            return f"<span style='color:{RECORD}'>Last recording: problems with {cameras}.</span>"
-        return f"Last recording: {len(results)} file(s), {frames:,} frames, every frame with its marker."
-
-    def _show_disk(self) -> None:
-        folder = self._folder()
-        while not folder.exists() and folder != folder.parent:
-            folder = folder.parent
-        try:
-            free = shutil.disk_usage(folder).free
-        except OSError:
-            self.disk_label.setText("")
-            return
-        rate = sum(s.stats.frame_bytes * s.stats.fps for s in self._session.cameras.values() if s.stats)
-        text = f"{free / 1e9:,.0f} GB free"
-        if rate > 0:
-            hours = free / rate / 3600
-            text += f" (about {hours:,.1f} h)" if hours < 100 else ""
-        self.disk_label.setText(text)
+    def _bytes_per_second(self) -> float:
+        """How fast the open cameras would fill the disk, from their frame sizes and rates."""
+        return sum(
+            state.stats.frame_bytes * state.stats.fps for state in self.rig.cameras.values() if state.stats
+        )
 
     # ── closing ──────────────────────────────────────────────────────────────
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if self._session.phase in (Phase.RECORDING, Phase.WAITING):
-            answer = QMessageBox.question(
-                self,
-                "Quit TimeShot",
-                "A recording is running. Stop it and quit?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                event.ignore()
-                return
+        """Closes the window once a running recording may stop: completes its files, saves the settings.
+
+        Args:
+            event: The close request; ignored if the user keeps the recording running.
+        """
+        if self.rig.phase in (Phase.RECORDING, Phase.WAITING) and not self._ask(
+            "Quit TimeShot", "A recording is running. Stop it and quit?"
+        ):
+            event.ignore()
+            return
         self._timer.stop()
         self._remember()
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            self._session.shutdown()  # completes any file being recorded
+            self.rig.shutdown()  # completes any file being recorded
         finally:
             QApplication.restoreOverrideCursor()
-        self._executor.shutdown(wait=False, cancel_futures=True)
+        self._scanner.shutdown(wait=False, cancel_futures=True)
         event.accept()
+
+
+def _suggested_folder() -> Path:
+    """The folder suggested for the video files: "TimeShot" in the user's video folder."""
+    videos = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.MoviesLocation)
+    return Path(videos or Path.home()) / "TimeShot"

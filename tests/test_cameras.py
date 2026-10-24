@@ -1,10 +1,11 @@
-"""Camera modes, mode lists parsed from FFmpeg's logs, and the synthetic cameras."""
+"""Camera modes, the device and mode lists read from FFmpeg's logs, and the synthetic cameras."""
 
 from __future__ import annotations
 
 import logging
 import sys
 import time
+from fractions import Fraction
 
 import av
 import numpy as np
@@ -42,20 +43,30 @@ from timeshot.frames import decode, decoder_for, encode_jpeg, jpeg_encoder, to_r
     ],
 )
 def test_mode_key_round_trip(mode: CameraMode) -> None:
+    """A mode's text form, as the settings file and the command line hold it, reads back the same."""
     assert CameraMode.parse(mode.key()) == mode
 
 
 def test_mode_parse_defaults_to_jpeg() -> None:
+    """A mode typed without a frame format is JPEG, the format recorded untouched."""
     assert CameraMode.parse("1280x720@25") == CameraMode(1280, 720, 25.0, JPEG)
 
 
 @pytest.mark.parametrize("text", ["1280x720", "x@30", "640x480@30:h264", "640x480@30:"])
 def test_mode_parse_rejects_nonsense(text: str) -> None:
+    """Incomplete modes and unknown frame formats are refused, saying what is wrong."""
     with pytest.raises(ValueError, match=r"mode|format"):
         CameraMode.parse(text)
 
 
+def test_mode_rate_is_exact() -> None:
+    """The frame rate as FFmpeg's time bases take it: a fraction, exact for NTSC rates."""
+    assert CameraMode(640, 480, 30.0).rate == 30
+    assert CameraMode(640, 480, 29.97).rate == Fraction(2997, 100)
+
+
 def test_preferred_mode_favours_jpeg_then_size_then_rate() -> None:
+    """A new camera starts in its largest JPEG mode of at least 25 fps."""
     modes = [
         CameraMode(1920, 1080, 30.0, RAW, "yuyv422"),
         CameraMode(1280, 720, 30.0),
@@ -68,11 +79,13 @@ def test_preferred_mode_favours_jpeg_then_size_then_rate() -> None:
 
 
 def test_frame_rates_offer_the_maximum_and_standard_rates_within_range() -> None:
+    """A camera's range of rates becomes its maximum plus the standard rates within it."""
     assert frame_rates(5, 30) == [30.0, 25.0, 24.0, 20.0, 15.0, 10.0, 5.0]
     assert frame_rates(29.97, 29.97) == [29.97]
 
 
 def test_identical_cameras_get_numbered_keys() -> None:
+    """Identical cameras keep their settings apart: the second of a name gets " #2"."""
     cameras = [CameraInfo(str(i), name, (), "x") for i, name in enumerate(["C920", "BRIO", "C920"])]
     assert [c.key for c in with_keys(cameras)] == ["C920", "BRIO", "C920 #2"]
 
@@ -95,6 +108,7 @@ DSHOW_LOG = "".join(
 
 
 def test_dshow_modes() -> None:
+    """DirectShow's mode list gives JPEG and known raw modes, each frame rate once."""
     modes = parse_dshow_modes(DSHOW_LOG)
     assert CameraMode(1920, 1080, 30.0) in modes
     assert CameraMode(1920, 1080, 25.0) in modes
@@ -124,6 +138,7 @@ DSHOW_NO_MICROPHONE_LOG = DSHOW_CAMERAS_LOG + "Could not enumerate audio only de
 
 
 def test_dshow_devices() -> None:
+    """DirectShow's device list is read alike with or without a microphone on the computer."""
     cameras = [
         ("@device_pnp_\\\\?\\usb#vid_0fd9&pid_0093&mi_00#7&2b#{65e8773d}\\global", "Elgato Facecam MK.2", ()),
         ("@device_pnp_usbcam", "USB Camera (1080p)", ("video",)),
@@ -139,12 +154,14 @@ def test_dshow_devices() -> None:
 def test_dshow_also_tries_devices_whose_media_types_ffmpeg_could_not_tell(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """A device FFmpeg could not inspect (as the Elgato Facecam MK.2) is still asked for modes."""
     facecam, usb_camera = (
         device_id for device_id, _name, _types in parse_dshow_devices(DSHOW_DEVICES_LOG)[:2]
     )
     asked: list[str] = []
 
     def ffmpeg_log(url: str, input_format: str, options: dict[str, str]) -> str:
+        """Plays FFmpeg: the device list, a camera's modes, or a device without video."""
         if "list_devices" in options:
             return DSHOW_DEVICES_LOG
         asked.append(url)
@@ -157,7 +174,7 @@ def test_dshow_also_tries_devices_whose_media_types_ffmpeg_could_not_tell(
     monkeypatch.setattr(av, "formats_available", {*av.formats_available, "dshow"})
     monkeypatch.setattr(ffmpeg, "capture_ffmpeg_log", ffmpeg_log)
     with caplog.at_level(logging.DEBUG, logger="timeshot.cameras"):
-        cameras = ffmpeg.FfmpegBackend("dshow").list_cameras()
+        cameras = ffmpeg.DshowBackend().list_cameras()
 
     assert [c.name for c in cameras] == ["Elgato Facecam MK.2", "USB Camera (1080p)"]
     assert not any("wave_" in url for url in asked), "audio devices are not asked for video modes"
@@ -169,7 +186,7 @@ def test_dshow_also_tries_devices_whose_media_types_ffmpeg_could_not_tell(
 @pytest.mark.skipif(sys.platform != "win32", reason="DirectShow")
 def test_dshow_listing_works_without_cameras_or_microphones() -> None:
     """The CI machine has neither: FFmpeg's device list API fails there, the logged list not."""
-    assert isinstance(ffmpeg.FfmpegBackend("dshow").list_cameras(), list)
+    assert isinstance(ffmpeg.DshowBackend().list_cameras(), list)
 
 
 AVFOUNDATION_DEVICES_LOG = """AVFoundation indev @ 0x7f8: AVFoundation video devices:
@@ -190,6 +207,7 @@ Supported modes:
 
 
 def test_avfoundation_devices_leave_out_screens_and_audio() -> None:
+    """Of AVFoundation's device list, only the cameras remain."""
     assert parse_avfoundation_devices(AVFOUNDATION_DEVICES_LOG) == [
         ("0", "FaceTime HD Camera"),
         ("1", "Logitech BRIO"),
@@ -197,6 +215,7 @@ def test_avfoundation_devices_leave_out_screens_and_audio() -> None:
 
 
 def test_avfoundation_modes_are_raw_with_standard_rates() -> None:
+    """AVFoundation's modes are raw, each size with the standard rates in its range."""
     modes = parse_avfoundation_modes(AVFOUNDATION_MODES_LOG)
     assert CameraMode(1280, 720, 60.0, RAW) in modes
     assert CameraMode(1920, 1080, 25.0, RAW) in modes
@@ -209,6 +228,7 @@ def test_avfoundation_modes_are_raw_with_standard_rates() -> None:
 
 
 def test_sequence_numbers_survive_jpeg() -> None:
+    """The number a synthetic frame carries reads back after JPEG encoding."""
     rgb = np.full((240, 320, 3), 90, np.uint8)
     draw_sequence_number(rgb, 0xBEEF)
     jpeg = encode_jpeg(jpeg_encoder(320, 240, quality=8), av.VideoFrame.from_ndarray(rgb, format="rgb24"))
@@ -218,6 +238,7 @@ def test_sequence_numbers_survive_jpeg() -> None:
 
 
 def test_synthetic_camera_delivers_numbered_frames_at_its_rate() -> None:
+    """A synthetic camera is paced like a real one, delivering JPEG frames."""
     stream = SyntheticBackend(1).open("0", CameraMode(640, 480, 30.0))
     try:
         start = time.perf_counter()
@@ -230,6 +251,7 @@ def test_synthetic_camera_delivers_numbered_frames_at_its_rate() -> None:
 
 
 def test_synthetic_raw_frames_are_packed() -> None:
+    """Synthetic raw frames have no row padding, as a camera's raw frames."""
     stream = SyntheticBackend(1).open("0", CameraMode(640, 480, 30.0, RAW, "yuyv422"))
     try:
         assert len(stream.read().data) == 640 * 480 * 2

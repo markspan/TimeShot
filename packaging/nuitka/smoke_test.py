@@ -42,6 +42,11 @@ GUI_ALIVE_SECONDS = 15
 
 
 def main() -> int:
+    """Runs every check on the executable named on the command line.
+
+    Returns:
+        0 if every check passed; a failing check ends the script with a message instead.
+    """
     if len(sys.argv) != 2:
         raise SystemExit(__doc__)
     executable = Path(sys.argv[1]).resolve()
@@ -66,9 +71,14 @@ def main() -> int:
 
 
 def check_real_camera_listing(executable: Path) -> None:
-    """Lists the computer's own cameras through the real camera interface (DirectShow on
-    Windows). A build machine usually has no camera and no microphone: that must come out as
-    "No cameras found", not as an error."""
+    """Lists the computer's own cameras through the real camera interface (DirectShow on Windows).
+
+    A build machine usually has no camera and no microphone: that must come out as "No
+    cameras found", not as an error.
+
+    Args:
+        executable: The compiled TimeShot.exe.
+    """
     command = [str(executable), "devices", "--details"]
     result = subprocess.run(command, capture_output=True, text=True, timeout=STARTUP_TIMEOUT, check=False)
     output = result.stdout + result.stderr
@@ -78,8 +88,15 @@ def check_real_camera_listing(executable: Path) -> None:
 
 
 def check_recording_alone(executable: Path, folder: Path) -> None:
-    """Recordings that start at once, without LabRecorder (no LSL connection needed): camera
-    JPEG frames into AVI, and H.264 into MP4."""
+    """Records at once, without LabRecorder: camera JPEG into AVI, and H.264 into MP4.
+
+    No LSL connection is needed for these, so they test the recorder processes, the writer
+    and FFmpeg's encoders on their own.
+
+    Args:
+        executable: The compiled TimeShot.exe.
+        folder: A folder for the video files.
+    """
     for extension in (".avi", ".mp4"):
         streams = f"smoke-{uuid.uuid4().hex[:8]}-{{i}}"
         arguments = ["--synthetic", "2", "record", "--no-wait", "-t", str(RECORD_SECONDS), "-o", str(folder),
@@ -94,7 +111,12 @@ def check_recording_alone(executable: Path, folder: Path) -> None:
 
 
 def check_recording_with_labrecorder(executable: Path, folder: Path) -> None:
-    """A recording that waits for LabRecorder (LSL inlets here): every marker must have its frame."""
+    """Records once LabRecorder (LSL inlets here) records; every marker must have its frame.
+
+    Args:
+        executable: The compiled TimeShot.exe.
+        folder: A folder for the video files.
+    """
     prefix = f"smoke-{uuid.uuid4().hex[:8]}"
     arguments = ["--synthetic", "2", "record", "-t", str(RECORD_SECONDS), "-o", str(folder),
                  "--file", "cam{i}.avi", "--stream", f"{prefix}-{{i}}"]  # fmt: skip
@@ -128,6 +150,11 @@ def check_recording_with_labrecorder(executable: Path, folder: Path) -> None:
 
 
 def check_gui_starts(executable: Path) -> None:
+    """Starts the desktop app with synthetic cameras, and checks that it keeps running.
+
+    Args:
+        executable: The compiled TimeShot.exe.
+    """
     environment = {**os.environ, "TIMESHOT_SYNTHETIC_CAMERAS": "2"}
     # In a process group of its own (outside Windows), so that end_process_tree() finds them all.
     process = subprocess.Popen([str(executable)], env=environment, start_new_session=sys.platform != "win32")
@@ -139,9 +166,15 @@ def check_gui_starts(executable: Path) -> None:
 
 
 def end_process_tree(process: subprocess.Popen[bytes]) -> None:
-    """Ends the app and its recorder processes together, and waits for it. Ended alone, it leaves
-    them running until they notice, still attached to the console of the CI step; the step's
-    shell then once failed as it ended ("No process is on the other end of the pipe")."""
+    """Ends the app and its recorder processes together, and waits for it.
+
+    Ended alone, it leaves them running until they notice, still attached to the console of
+    the CI step; the step's shell then once failed as it ended ("No process is on the other
+    end of the pipe").
+
+    Args:
+        process: The desktop app's process.
+    """
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True, check=False)
     else:
@@ -150,7 +183,14 @@ def end_process_tree(process: subprocess.Popen[bytes]) -> None:
 
 
 def connect(name: str) -> pylsl.StreamInlet | None:
-    """An inlet connected to the stream called ``name``, or None if it does not appear."""
+    """An inlet connected to an LSL stream, as LabRecorder would connect.
+
+    Args:
+        name: The stream's name.
+
+    Returns:
+        The connected inlet, or None if the stream does not appear in time.
+    """
     found = pylsl.resolve_byprop("name", name, timeout=STARTUP_TIMEOUT)
     print(f"{'ok' if found else 'FAILED'}: LSL stream {name} appears", flush=True)
     if not found:
@@ -161,6 +201,7 @@ def connect(name: str) -> pylsl.StreamInlet | None:
 
 
 def pull_markers(inlet: pylsl.StreamInlet) -> list[int]:
+    """The frame index of every marker an inlet has received, in the order received."""
     markers = []
     while (sample := inlet.pull_sample(timeout=2.0)[0]) is not None:
         markers.append(int(sample[0]))
@@ -168,7 +209,7 @@ def pull_markers(inlet: pylsl.StreamInlet) -> list[int]:
 
 
 def sequence_numbers(path: Path) -> list[int]:
-    """The synthetic camera's number of every frame in the file, in file order."""
+    """The synthetic camera's sequence number of every frame in a video file, in file order."""
     with av.open(str(path)) as container:
         return [
             read_sequence_number(np.asarray(f.to_ndarray(format="rgb24"))) for f in container.decode(video=0)
@@ -176,6 +217,15 @@ def sequence_numbers(path: Path) -> list[int]:
 
 
 def run(executable: Path, *arguments: str) -> str:
+    """Runs the executable, and fails the smoke test if it fails.
+
+    Args:
+        executable: The compiled TimeShot.exe.
+        *arguments: Its arguments.
+
+    Returns:
+        What it printed.
+    """
     command = [str(executable), *arguments]
     result = subprocess.run(command, capture_output=True, text=True, timeout=STARTUP_TIMEOUT, check=False)
     if result.returncode:
@@ -185,6 +235,12 @@ def run(executable: Path, *arguments: str) -> str:
 
 
 def expect(condition: bool, what: str) -> None:
+    """Reports a check, and ends the smoke test if it failed.
+
+    Args:
+        condition: Whether the check passed.
+        what: What was checked.
+    """
     print(f"{'ok' if condition else 'FAILED'}: {what}", flush=True)
     if not condition:
         raise SystemExit(f"Smoke test failed: {what}")

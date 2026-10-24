@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Build a standalone TimeShot 2 for Windows with Nuitka.
+r"""Build a standalone TimeShot 2 for Windows with Nuitka.
 
 Run on 64-bit Windows, in a fresh virtual environment with Python 3.12 or newer::
 
     py -3.12 -m venv .venv-build
-    .venv-build\\Scripts\\activate
-    pip install -r packaging\\nuitka\\requirements.txt
+    .venv-build\Scripts\activate
+    pip install -r packaging\nuitka\requirements.txt
     pip install --no-deps .
-    python packaging\\nuitka\\build.py
-    python packaging\\nuitka\\smoke_test.py build\\TimeShot\\TimeShot.exe
+    python packaging\nuitka\build.py
+    python packaging\nuitka\smoke_test.py build\TimeShot\TimeShot.exe
 
 Nuitka needs a C compiler: Visual Studio (or its Build Tools) with the "Desktop development
 with C++" workload. Without one it offers to download MinGW64 itself.
 
-The result is ``dist\\TimeShot-<version>-windows-x64.zip``, holding a ``TimeShot`` folder:
+The result is ``dist\TimeShot-<version>-windows-x64.zip``, holding a ``TimeShot`` folder:
 
 * ``TimeShot.exe`` is the desktop app when started without arguments (no console window),
   and the command line when started from a terminal with arguments
@@ -47,6 +47,11 @@ ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 
 
 def main() -> int:
+    """Builds TimeShot.exe and zips its folder.
+
+    Returns:
+        0; a failure ends the script with a message instead.
+    """
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build", help="Nuitka's output folder")
     parser.add_argument("--dist-dir", type=Path, default=ROOT / "dist", help="folder for the zip")
@@ -84,7 +89,16 @@ def main() -> int:
 
 
 def nuitka_command(version: str, build_dir: Path, icon: Path) -> list[str]:
-    """The Nuitka invocation."""
+    """The command that compiles TimeShot with Nuitka.
+
+    Args:
+        version: TimeShot's version, for the executable's file properties.
+        build_dir: Nuitka's output folder.
+        icon: The executable's icon (see :func:`render_ico`).
+
+    Returns:
+        The command, as arguments.
+    """
     return [
         sys.executable, "-m", "nuitka",
         "--mode=standalone",
@@ -118,15 +132,31 @@ def nuitka_command(version: str, build_dir: Path, icon: Path) -> list[str]:
 
 
 def windows_version(version: str) -> str:
-    """The four numbers Windows wants for a file version: "2.0.0.dev0" becomes "2.0.0.0"."""
+    """The four numbers Windows wants for a file version.
+
+    Args:
+        version: A Python package version, e.g. "2.0.0.dev0".
+
+    Returns:
+        Its leading numbers, padded or cut to four: "2.0.0.0".
+    """
     match = re.match(r"\d+(?:\.\d+)*", version)
     numbers = match.group().split(".")[:4] if match else []
     return ".".join([*numbers, "0", "0", "0", "0"][:4])
 
 
 def render_ico(path: Path) -> Path:
-    """Renders the SVG icon into a Windows ``.ico``, drawing every size from the vector
-    image (sharper small sizes than scaling one bitmap down)."""
+    """Renders the SVG icon into a Windows ``.ico``.
+
+    Every size is drawn from the vector image, which gives sharper small sizes than scaling
+    one bitmap down.
+
+    Args:
+        path: The ``.ico`` file to write.
+
+    Returns:
+        ``path``.
+    """
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # no window needed
     from PIL import Image  # noqa: PLC0415  (build-only dependencies)
     from PySide6.QtCore import QRectF, Qt  # noqa: PLC0415
@@ -139,6 +169,7 @@ def render_ico(path: Path) -> Path:
         raise SystemExit(f"{ICON_SVG} is not a valid SVG image.")
 
     def render(size: int) -> Image.Image:
+        """Draws the icon at one size, as a Pillow image."""
         image = QImage(size, size, QImage.Format.Format_RGBA8888)
         image.fill(Qt.GlobalColor.transparent)
         painter = QPainter(image)

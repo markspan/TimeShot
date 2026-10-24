@@ -1,4 +1,4 @@
-"""One camera's card in the main window: live preview, mode, names and status."""
+"""One camera's card in the main window: its settings, live preview and status."""
 
 from __future__ import annotations
 
@@ -6,14 +6,12 @@ import html
 
 import numpy as np
 import numpy.typing as npt
-from PySide6.QtCore import QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPaintEvent, QPalette
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QFormLayout,
     QFrame,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -23,264 +21,193 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from timeshot.cameras.base import CameraMode
-from timeshot.gui.theme import OK, RECORD, WARNING
-from timeshot.recording.recorder import RecorderStats
-from timeshot.session import CameraSetup, CameraState, Phase, Problem, with_extension
+from timeshot.gui.camera_status import camera_status
+from timeshot.gui.mode_picker import ModePicker
+from timeshot.gui.preview_view import PreviewView
+from timeshot.gui.theme import CARD_STYLE, WARNING
+from timeshot.rig import CameraState, Phase
+from timeshot.setup import CameraSetup, NameTemplates, Problem
 
-# A camera that delivered nothing for this long is reported as stalled.
-STALL_SECONDS = 1.5
-
-
-class PreviewView(QWidget):
-    """A camera's preview image, letterboxed to keep its aspect ratio, or a message instead."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._image: QImage | None = None
-        self._message: str | None = "Starting camera…"
-        self._recording = False
-        self.setMinimumSize(240, 135)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-
-    def sizeHint(self) -> QSize:
-        # No height-for-width: the cards sit at the top of their grid, which gives them their size
-        # hint, so a preview would never get that height, while the scroll area would count it.
-        return QSize(400, 225)
-
-    def set_image(self, rgb: npt.NDArray[np.uint8]) -> None:
-        height, width = rgb.shape[:2]
-        self._image = QImage(rgb.data, width, height, 3 * width, QImage.Format.Format_RGB888).copy()
-        self._message = None
-        self.update()
-
-    def set_message(self, message: str | None) -> None:
-        """Shows ``message`` over the picture (None: the picture only); clears a stale picture."""
-        if message != self._message:
-            self._message = message
-            if message:
-                self._image = None
-            self.update()
-
-    def set_recording(self, recording: bool) -> None:
-        if recording != self._recording:
-            self._recording = recording
-            self.update()
-
-    def paintEvent(self, _event: QPaintEvent) -> None:
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.fillRect(self.rect(), QColor("#0d0f13"))
-        if self._image is not None:
-            size = self._image.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
-            x, y = (self.width() - size.width()) / 2, (self.height() - size.height()) / 2
-            painter.drawImage(QRectF(x, y, size.width(), size.height()), self._image)
-        if self._message:
-            painter.setPen(QColor("#aab2bf"))
-            painter.drawText(
-                self.rect().adjusted(12, 12, -12, -12),
-                Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
-                self._message,
-            )
-        if self._recording:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(RECORD))
-            painter.drawEllipse(QRectF(10, 10, 12, 12))
-            font = QFont(painter.font())
-            font.setBold(True)
-            painter.setFont(font)
-            painter.setPen(QColor("#ffffff"))
-            painter.drawText(QRectF(28, 6, 60, 20), Qt.AlignmentFlag.AlignVCenter, "REC")
-        painter.end()
-
-
-class ModePicker(QWidget):
-    """Format, size and frame rate of a camera, each list narrowed to what the choices before it allow."""
-
-    changed = Signal()
-
-    def __init__(
-        self, modes: tuple[CameraMode, ...], current: CameraMode | None, parent: QWidget | None = None
-    ) -> None:
-        super().__init__(parent)
-        self._modes = modes
-        self._format, self._size, self._fps = QComboBox(), QComboBox(), QComboBox()
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        for combo, stretch in ((self._format, 3), (self._size, 3), (self._fps, 2)):
-            layout.addWidget(combo, stretch)
-        self._format.setToolTip(
-            "JPEG frames are recorded exactly as the camera delivers them.\n"
-            "Raw frames are encoded as JPEG first, which takes more CPU."
-        )
-        formats = sorted({m.format_label for m in modes}, key=lambda f: (f != "JPEG", f))
-        self._fill(self._format, [(f, f) for f in formats], current.format_label if current else None)
-        self._format.currentIndexChanged.connect(self._format_changed)
-        self._size.currentIndexChanged.connect(self._size_changed)
-        self._fps.currentIndexChanged.connect(self.changed)
-        self._refill_sizes(current)
-
-    def mode(self) -> CameraMode | None:
-        fmt, size, fps = self._format.currentData(), self._size.currentData(), self._fps.currentData()
-        return next(
-            (m for m in self._modes if (m.format_label, m.size_label, m.fps) == (fmt, size, fps)), None
-        )
-
-    def _format_changed(self) -> None:
-        self._refill_sizes(self.mode())
-        self.changed.emit()
-
-    def _size_changed(self) -> None:
-        self._refill_rates(self.mode())
-        self.changed.emit()
-
-    def _refill_sizes(self, keep: CameraMode | None) -> None:
-        modes = [m for m in self._modes if m.format_label == self._format.currentData()]
-        sizes = sorted({(m.width * m.height, m.size_label) for m in modes}, reverse=True)
-        self._fill(self._size, [(label, label) for _area, label in sizes], keep.size_label if keep else None)
-        self._refill_rates(keep)
-
-    def _refill_rates(self, keep: CameraMode | None) -> None:
-        rates = sorted(
-            {
-                m.fps
-                for m in self._modes
-                if (m.format_label, m.size_label) == (self._format.currentData(), self._size.currentData())
-            },
-            reverse=True,
-        )
-        self._fill(self._fps, [(f"{r:g} fps", r) for r in rates], keep.fps if keep else None)
-
-    @staticmethod
-    def _fill(combo: QComboBox, items: list[tuple[str, object]], keep: object) -> None:
-        combo.blockSignals(True)
-        combo.clear()
-        for text, data in items:
-            combo.addItem(text, data)
-        index = combo.findData(keep)
-        combo.setCurrentIndex(index if index >= 0 else 0)
-        combo.blockSignals(False)
+MAX_NUMBER = 999  # the highest camera number the number box offers
+MAKE_DEFAULT = "Use these names for new cameras"
+IS_DEFAULT = "✓ New cameras start with these names"
 
 
 class CameraCard(QFrame):
-    """A camera's settings and live state."""
+    """A camera's card: whether to record it, its preview, number, mode, names and status.
 
-    changed = Signal()  # settings edited
-    reopen = Signal()  # switched on or off, or another mode chosen: the camera must be (re)opened
-    make_default = Signal()  # "Use these names for new cameras" clicked
+    The card edits the camera's :class:`~timeshot.setup.CameraSetup` in place, and signals
+    what changed.
 
-    _defaults: tuple[str, str, str] | None  # the name, stream and file templates new cameras start with
+    Signals:
+        changed: A setting was edited.
+        reopen: The camera was switched on or off, or another mode chosen: the camera must be
+            opened again (or closed).
+        make_default: "Use these names for new cameras" was clicked.
+    """
+
+    changed = Signal()
+    reopen = Signal()
+    make_default = Signal()
 
     def __init__(self, setup: CameraSetup, session: str, parent: QWidget | None = None) -> None:
+        """Builds the card.
+
+        Args:
+            setup: The camera's settings, which the card edits in place.
+            session: The session, to show the names filled in.
+            parent: The widget it belongs to.
+        """
         super().__init__(parent)
         self.setup = setup
         self._session = session
+        self._defaults: NameTemplates | None = None  # the templates new cameras start with
+        self._editable = True  # the camera is on and its settings may be edited
         self.setObjectName("card")
-        self.setStyleSheet(
-            "QFrame#card { border: 1px solid palette(mid); border-radius: 10px; background: palette(base); }"
-        )
+        self.setStyleSheet(CARD_STYLE)
 
-        self.enabled = QCheckBox(setup.camera.key)
-        font = self.enabled.font()
-        font.setBold(True)
-        font.setPointSizeF(font.pointSizeF() * 1.1)
-        self.enabled.setFont(font)
-        self.enabled.setChecked(setup.enabled)
-        self.enabled.setToolTip("Record this camera")
-        self.enabled.toggled.connect(self._enabled_changed)
-
+        self.enabled_box = self._enabled_box()
         self.preview = PreviewView()
-        self.modes = ModePicker(setup.camera.modes, setup.mode)
-        self.modes.changed.connect(self._mode_changed)
-
-        self.number = self._number_field(setup.number)
-        self.name = self._field(setup.name, "Camera name, stored in the LSL stream (camera_name)")
-        self.stream = self._field(
-            setup.stream, "Name of the camera's LSL marker stream, as LabRecorder lists it"
+        self.mode_picker = ModePicker(setup.camera.modes, setup.mode)
+        self.mode_picker.changed.connect(self._mode_changed)
+        self.number_box = self._number_box()
+        templates = setup.templates
+        self.name_field = self._template_field(
+            templates.name, "Camera name, stored in the LSL stream (camera_name)"
         )
-        self.file = self._field(
-            setup.file, "Video file name, in the output folder: .avi or .mkv for camera JPEG, .mp4 for H.264"
+        self.stream_field = self._template_field(
+            templates.stream, "Name of the camera's LSL marker stream, as LabRecorder lists it"
+        )
+        self.file_field = self._template_field(
+            templates.file,
+            "Video file name, in the output folder: .avi or .mkv for camera JPEG, .mp4 for H.264",
         )
         self.default_button = self._default_button()
-        self.result = QLabel()
-        self.result.setTextFormat(Qt.TextFormat.RichText)
-        self.result.setWordWrap(True)
-        self.status = QLabel()
-        self.status.setTextFormat(Qt.TextFormat.RichText)
-        self.status.setWordWrap(True)
-        self.problems = QLabel()
-        self.problems.setWordWrap(True)
-        self.problems.setStyleSheet(f"color: {WARNING};")
-        self.problems.hide()
+        self.names_label = self._rich_label()  # the names, filled in
+        self.status_label = self._rich_label()
+        self.problems_label = QLabel()
+        self.problems_label.setWordWrap(True)
+        self.problems_label.setStyleSheet(f"color: {WARNING};")
+        self.problems_label.hide()
 
-        form = QFormLayout()
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        form.addRow("Number", self.number)
-        form.addRow("Mode", self.modes)
-        form.addRow("Name", self.name)
-        form.addRow("Stream", self.stream)
-        form.addRow("File", self.file)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(8)
-        layout.addWidget(self.enabled)
-        layout.addWidget(self.preview)
-        layout.addLayout(form)
-        layout.addWidget(self.default_button, 0, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(self.result)
-        layout.addWidget(self.status)
-        layout.addWidget(self.problems)
+        self._lay_out()
         self._show_names()
         self._set_inputs_enabled(True)
 
     # ── updates from the window ──────────────────────────────────────────────
 
     def set_session(self, session: str) -> None:
+        """Shows the names filled in for another session.
+
+        Args:
+            session: The session.
+        """
         self._session = session
         self._show_names()
 
     def set_locked(self, locked: bool) -> None:
-        """Locks the settings while streams are open or a recording runs."""
-        self.enabled.setEnabled(not locked)
+        """Locks the settings, while LSL streams are open or a recording runs.
+
+        Args:
+            locked: Whether to lock them.
+        """
+        self.enabled_box.setEnabled(not locked)
         self._set_inputs_enabled(not locked)
 
     def set_file_extension(self, extension: str) -> None:
-        """Gives the file name template ``extension``, in place of a video extension it has."""
-        self.file.setText(with_extension(self.setup.file, extension))
+        """Gives the file name template another video extension, as if typed.
+
+        Args:
+            extension: The extension, e.g. ".mp4".
+        """
+        self.file_field.setText(self.setup.templates.with_extension(extension).file)
         self._names_edited()
 
-    def set_default_templates(self, templates: tuple[str, str, str]) -> None:
-        """The name, stream and file templates new cameras start with, to show whether this
-        camera's are those."""
+    def set_default_templates(self, templates: NameTemplates) -> None:
+        """Tells the card the templates new cameras start with, to show whether its own are those.
+
+        Args:
+            templates: The templates.
+        """
         self._defaults = templates
         self._show_default_state()
 
     def set_problems(self, problems: list[Problem]) -> None:
-        self.problems.setText("\n".join(p.message for p in problems))
-        self.problems.setVisible(bool(problems))
+        """Shows what is wrong with the camera's settings.
+
+        Args:
+            problems: The problems that concern this camera; none hides the warning.
+        """
+        self.problems_label.setText("\n".join(problem.message for problem in problems))
+        self.problems_label.setVisible(bool(problems))
 
     def show_preview(self, rgb: npt.NDArray[np.uint8]) -> None:
+        """Shows a new preview image.
+
+        Args:
+            rgb: The image, as an RGB array.
+        """
         self.preview.set_image(rgb)
 
     def show_state(self, state: CameraState | None, phase: Phase) -> None:
+        """Shows the camera's live state: its status line, the preview's message and "REC" mark.
+
+        Args:
+            state: The state of the camera's recorder process; None if it has none.
+            phase: What the rig is doing.
+        """
         if not self.setup.enabled:
+            self.status_label.setText("")
             self.preview.set_message("Off")
-            self.status.setText("")
             self.preview.set_recording(False)
             return
-        text, message = describe(state, phase, self.setup.mode)
-        self.status.setText(text)
-        self.preview.set_message(message)
+        status = camera_status(state, phase, self.setup.mode)
+        self.status_label.setText(status.line)
+        self.preview.set_message(status.overlay)
         self.preview.set_recording(bool(state and state.stats and state.stats.recording))
 
-    # ── internals ────────────────────────────────────────────────────────────
+    # ── building ─────────────────────────────────────────────────────────────
+
+    def _enabled_box(self) -> QCheckBox:
+        """The check box that switches the camera on or off, titled with its name."""
+        box = QCheckBox(self.setup.camera.key)
+        font = box.font()
+        font.setBold(True)
+        font.setPointSizeF(font.pointSizeF() * 1.1)
+        box.setFont(font)
+        box.setChecked(self.setup.enabled)
+        box.setToolTip("Record this camera")
+        box.toggled.connect(self._enabled_changed)
+        return box
+
+    def _number_box(self) -> QSpinBox:
+        """The box for the camera's number, a few digits wide."""
+        box = QSpinBox()
+        box.setRange(0, MAX_NUMBER)
+        box.setValue(self.setup.number)
+        box.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        box.setToolTip("The camera's number: {i} in its names below. Kept for this camera.")
+        box.valueChanged.connect(self._number_changed)
+        return box
+
+    def _template_field(self, template: str, tooltip: str) -> QLineEdit:
+        """A field for one of the camera's name templates.
+
+        Args:
+            template: The template.
+            tooltip: What the name is for; how to fill in ``{i}`` and ``{s}`` is added.
+
+        Returns:
+            The field.
+        """
+        field = QLineEdit(template)
+        field.setToolTip(f"{tooltip}.\n{{i}} is the camera's number, {{s}} the session.")
+        field.textEdited.connect(self._names_edited)
+        return field
 
     def _default_button(self) -> QPushButton:
-        self._defaults = None
-        self._active = True  # the camera is on and its settings may be edited
-        button = QPushButton("Use these names for new cameras")
+        """The button that makes the card's name templates the ones new cameras start with."""
+        button = QPushButton(MAKE_DEFAULT)
         button.setFlat(True)
         button.setToolTip(
             "Cameras seen for the first time start with this camera's name, stream and file templates"
@@ -288,119 +215,105 @@ class CameraCard(QFrame):
         button.clicked.connect(self.make_default)
         return button
 
-    def _show_default_state(self) -> None:
-        is_default = (self.setup.name, self.setup.stream, self.setup.file) == self._defaults
-        self.default_button.setEnabled(self._active and not is_default)
-        self.default_button.setText(
-            "✓ New cameras start with these names" if is_default else "Use these names for new cameras"
-        )
+    @staticmethod
+    def _rich_label() -> QLabel:
+        """An empty label for rich text, wrapping its lines."""
+        label = QLabel()
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setWordWrap(True)
+        return label
 
-    def _number_field(self, number: int) -> QSpinBox:
-        box = QSpinBox()
-        box.setRange(0, 999)
-        box.setValue(number)
-        box.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)  # a few digits wide
-        box.setToolTip("The camera's number: {i} in its names below. Kept for this camera.")
-        box.valueChanged.connect(self._number_changed)
-        return box
+    def _lay_out(self) -> None:
+        """Arranges the card: title, preview, the settings form, then the texts below it."""
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.addRow("Number", self.number_box)
+        form.addRow("Mode", self.mode_picker)
+        form.addRow("Name", self.name_field)
+        form.addRow("Stream", self.stream_field)
+        form.addRow("File", self.file_field)
 
-    def _field(self, text: str, tooltip: str) -> QLineEdit:
-        edit = QLineEdit(text)
-        edit.setToolTip(f"{tooltip}.\n{{i}} is the camera's number, {{s}} the session.")
-        edit.textEdited.connect(self._names_edited)
-        return edit
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+        layout.addWidget(self.enabled_box)
+        layout.addWidget(self.preview)
+        layout.addLayout(form)
+        layout.addWidget(self.default_button, 0, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.names_label)
+        layout.addWidget(self.status_label)
+        layout.addWidget(self.problems_label)
+
+    # ── edits ────────────────────────────────────────────────────────────────
 
     def _names_edited(self) -> None:
-        self.setup.name, self.setup.stream, self.setup.file = (
-            self.name.text(),
-            self.stream.text(),
-            self.file.text(),
+        """Takes the edited name templates into the camera's settings."""
+        self.setup.templates = NameTemplates(
+            self.name_field.text(), self.stream_field.text(), self.file_field.text()
         )
         self._show_names()
         self._show_default_state()
         self.changed.emit()
 
     def _number_changed(self, number: int) -> None:
+        """Takes the edited number into the camera's settings.
+
+        Args:
+            number: The new number.
+        """
         self.setup.number = number
         self._show_names()
         self.changed.emit()
 
     def _enabled_changed(self, enabled: bool) -> None:
+        """Switches the camera on or off.
+
+        Args:
+            enabled: Whether to record it.
+        """
         self.setup.enabled = enabled
         self._set_inputs_enabled(True)
         self.changed.emit()
         self.reopen.emit()
 
     def _mode_changed(self) -> None:
-        mode = self.modes.mode()
+        """Takes a newly chosen mode into the camera's settings; the camera must reopen in it."""
+        mode = self.mode_picker.mode()
         if mode is not None and mode != self.setup.mode:
             self.setup.mode = mode
             self.changed.emit()
             self.reopen.emit()
 
+    # ── showing ──────────────────────────────────────────────────────────────
+
     def _set_inputs_enabled(self, editable: bool) -> None:
-        self._active = active = editable and self.setup.enabled
-        for widget in (self.number, self.modes, self.name, self.stream, self.file):
-            widget.setEnabled(active)
+        """Enables the settings of a camera that is on, while they may be edited.
+
+        Args:
+            editable: Whether the settings may be edited now.
+        """
+        self._editable = editable and self.setup.enabled
+        for widget in (
+            self.number_box,
+            self.mode_picker,
+            self.name_field,
+            self.stream_field,
+            self.file_field,
+        ):
+            widget.setEnabled(self._editable)
         self._show_default_state()
 
     def _show_names(self) -> None:
-        name, stream, file = self.setup.names(self._session)
+        """Shows the names the templates give in this session, muted, below the form."""
+        names = self.setup.names(self._session)
         muted = self.palette().color(QPalette.ColorRole.PlaceholderText).name()
-        self.result.setText(
-            f"<span style='color:{muted}'>→ <b>{html.escape(file) or '…'}</b>, stream "
-            f"<b>{html.escape(stream) or '…'}</b>, camera “{html.escape(name)}”</span>"
+        self.names_label.setText(
+            f"<span style='color:{muted}'>→ <b>{html.escape(names.file) or '…'}</b>, stream "
+            f"<b>{html.escape(names.stream) or '…'}</b>, camera “{html.escape(names.name)}”</span>"
         )
 
-
-def _colored(color: str, text: str) -> str:
-    return f"<span style='color:{color}'>{html.escape(text)}</span>"
-
-
-def describe(state: CameraState | None, phase: Phase, requested: CameraMode | None) -> tuple[str, str | None]:
-    """The status line of a camera (rich text) and the message to show over its preview, if any."""
-    if state is None:
-        return "", "Starting camera…"
-    if state.ended or (state.error and state.stats is None):
-        return _colored(RECORD, state.error or "The camera stopped."), "Camera unavailable"
-    if state.mode is None or state.stats is None:
-        return "Opening camera…", "Starting camera…"
-    stats = state.stats
-    parts = [f"{stats.fps:.2f} fps"]
-    if requested is not None and state.mode != requested:
-        parts.append(html.escape(f"camera gave {state.mode}"))
-    parts += _link_status(stats)
-    parts += _recording_status(state, phase)
-    if stats.error:
-        parts.append(_colored(RECORD, stats.error))
-    message = None
-    if stats.seconds_since_frame > STALL_SECONDS:
-        parts.append(_colored(RECORD, f"no frames for {stats.seconds_since_frame:.0f} s"))
-        message = "The camera stopped delivering frames"
-    return " · ".join(parts), message
-
-
-def _link_status(stats: RecorderStats) -> list[str]:
-    """Whether LabRecorder receives the camera's markers."""
-    if stats.streaming and stats.consumers:
-        return [_colored(OK, "LabRecorder connected")]
-    if stats.recording:
-        return [_colored(RECORD, "no LabRecorder connected: markers are not being recorded")]
-    if stats.streaming:
-        return [_colored(WARNING, "waiting for LabRecorder")]
-    return []
-
-
-def _recording_status(state: CameraState, phase: Phase) -> list[str]:
-    """Progress of the running recording, or how the last one ended."""
-    stats, result = state.stats, state.result
-    if stats is not None and stats.recording:
-        parts = [_colored(RECORD, f"● {stats.markers_sent:,} frames"), html.escape(stats.writing)]
-        if stats.backlog > stats.fps / 2:
-            parts.append(_colored(WARNING, f"{stats.backlog} frames waiting for the disk"))
-        return parts
-    if phase is Phase.PREVIEW and result is not None:
-        if result.ok:
-            return [_colored(OK, f"recorded {result.file.frames_written:,} frames")]
-        return [_colored(RECORD, result.file.error or "frames and markers differ")]
-    return []
+    def _show_default_state(self) -> None:
+        """Shows whether the card's templates are those new cameras start with."""
+        is_default = self.setup.templates == self._defaults
+        self.default_button.setEnabled(self._editable and not is_default)
+        self.default_button.setText(IS_DEFAULT if is_default else MAKE_DEFAULT)

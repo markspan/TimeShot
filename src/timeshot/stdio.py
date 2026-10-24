@@ -27,8 +27,12 @@ _C_STREAMS = (0, 1, 2)
 
 
 def reset_c_stream_modes() -> None:
-    """Puts the C runtime's stdin, stdout and stderr in its default text mode. Does nothing
-    outside Windows, and for a stream without a file (a process without a console has none)."""
+    """Puts the C runtime's stdin, stdout and stderr back in its default text mode.
+
+    Call it first thing in a process, before native code writes to these streams. It does
+    nothing outside Windows, and nothing to a stream without a file (a process without a
+    console has none).
+    """
     if sys.platform != "win32":
         return
     import ctypes  # noqa: PLC0415  (Windows only)

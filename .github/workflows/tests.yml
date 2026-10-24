@@ -12,12 +12,14 @@ on:
       - "pyproject.toml"
       - "src/**"
       - "tests/**"
+      - "packaging/nuitka/*.py"
   pull_request:
     paths:
       - ".github/workflows/tests.yml"
       - "pyproject.toml"
       - "src/**"
       - "tests/**"
+      - "packaging/nuitka/*.py"
 
 permissions:
   contents: read
@@ -59,8 +61,8 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Lint
         run: |
-          ruff check src tests
-          ruff format --check src tests
+          ruff check src tests packaging/nuitka
+          ruff format --check src tests packaging/nuitka
       - name: Types
         run: mypy
       - name: Tests

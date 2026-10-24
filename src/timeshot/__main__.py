@@ -6,5 +6,7 @@ import sys
 from timeshot.cli import main
 
 if __name__ == "__main__":
-    multiprocessing.freeze_support()  # recorder processes of a compiled build start through here
+    # The recorder processes of a compiled build start through here: freeze_support() hands
+    # them over to multiprocessing instead of starting TimeShot again.
+    multiprocessing.freeze_support()
     sys.exit(main())
