@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import itertools
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -128,13 +129,24 @@ def check_recording_with_labrecorder(executable: Path, folder: Path) -> None:
 
 def check_gui_starts(executable: Path) -> None:
     environment = {**os.environ, "TIMESHOT_SYNTHETIC_CAMERAS": "2"}
-    process = subprocess.Popen([str(executable)], env=environment)
+    # In a process group of its own (outside Windows), so that end_process_tree() finds them all.
+    process = subprocess.Popen([str(executable)], env=environment, start_new_session=sys.platform != "win32")
     try:
         time.sleep(GUI_ALIVE_SECONDS)
         expect(process.poll() is None, f"the desktop app is still running after {GUI_ALIVE_SECONDS} s")
     finally:
-        process.kill()  # its recorder processes end when their connection to it breaks
-        process.wait()
+        end_process_tree(process)
+
+
+def end_process_tree(process: subprocess.Popen[bytes]) -> None:
+    """Ends the app and its recorder processes together, and waits for it. Ended alone, it leaves
+    them running until they notice, still attached to the console of the CI step; the step's
+    shell then once failed as it ended ("No process is on the other end of the pipe")."""
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True, check=False)
+    else:
+        os.killpg(process.pid, signal.SIGKILL)
+    process.wait()
 
 
 def connect(name: str) -> pylsl.StreamInlet | None:
