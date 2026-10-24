@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QSizePolicy,
     QSpinBox,
     QVBoxLayout,
@@ -43,13 +44,9 @@ class PreviewView(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
     def sizeHint(self) -> QSize:
+        # No height-for-width: the cards sit at the top of their grid, which gives them their size
+        # hint, so a preview would never get that height, while the scroll area would count it.
         return QSize(400, 225)
-
-    def hasHeightForWidth(self) -> bool:
-        return True
-
-    def heightForWidth(self, width: int) -> int:
-        return width * 9 // 16
 
     def set_image(self, rgb: npt.NDArray[np.uint8]) -> None:
         height, width = rgb.shape[:2]
@@ -171,6 +168,9 @@ class CameraCard(QFrame):
 
     changed = Signal()  # settings edited
     reopen = Signal()  # switched on or off, or another mode chosen: the camera must be (re)opened
+    make_default = Signal()  # "Use these names for new cameras" clicked
+
+    _defaults: tuple[str, str, str] | None  # the name, stream and file templates new cameras start with
 
     def __init__(self, setup: CameraSetup, session: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -202,6 +202,7 @@ class CameraCard(QFrame):
         self.file = self._field(
             setup.file, "Video file name, in the output folder: .avi or .mkv for camera JPEG, .mp4 for H.264"
         )
+        self.default_button = self._default_button()
         self.result = QLabel()
         self.result.setTextFormat(Qt.TextFormat.RichText)
         self.result.setWordWrap(True)
@@ -227,6 +228,7 @@ class CameraCard(QFrame):
         layout.addWidget(self.enabled)
         layout.addWidget(self.preview)
         layout.addLayout(form)
+        layout.addWidget(self.default_button, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.result)
         layout.addWidget(self.status)
         layout.addWidget(self.problems)
@@ -249,6 +251,12 @@ class CameraCard(QFrame):
         self.file.setText(with_extension(self.setup.file, extension))
         self._names_edited()
 
+    def set_default_templates(self, templates: tuple[str, str, str]) -> None:
+        """The name, stream and file templates new cameras start with, to show whether this
+        camera's are those."""
+        self._defaults = templates
+        self._show_default_state()
+
     def set_problems(self, problems: list[Problem]) -> None:
         self.problems.setText("\n".join(p.message for p in problems))
         self.problems.setVisible(bool(problems))
@@ -268,6 +276,24 @@ class CameraCard(QFrame):
         self.preview.set_recording(bool(state and state.stats and state.stats.recording))
 
     # ── internals ────────────────────────────────────────────────────────────
+
+    def _default_button(self) -> QPushButton:
+        self._defaults = None
+        self._active = True  # the camera is on and its settings may be edited
+        button = QPushButton("Use these names for new cameras")
+        button.setFlat(True)
+        button.setToolTip(
+            "Cameras seen for the first time start with this camera's name, stream and file templates"
+        )
+        button.clicked.connect(self.make_default)
+        return button
+
+    def _show_default_state(self) -> None:
+        is_default = (self.setup.name, self.setup.stream, self.setup.file) == self._defaults
+        self.default_button.setEnabled(self._active and not is_default)
+        self.default_button.setText(
+            "✓ New cameras start with these names" if is_default else "Use these names for new cameras"
+        )
 
     def _number_field(self, number: int) -> QSpinBox:
         box = QSpinBox()
@@ -291,6 +317,7 @@ class CameraCard(QFrame):
             self.file.text(),
         )
         self._show_names()
+        self._show_default_state()
         self.changed.emit()
 
     def _number_changed(self, number: int) -> None:
@@ -312,9 +339,10 @@ class CameraCard(QFrame):
             self.reopen.emit()
 
     def _set_inputs_enabled(self, editable: bool) -> None:
-        active = editable and self.setup.enabled
+        self._active = active = editable and self.setup.enabled
         for widget in (self.number, self.modes, self.name, self.stream, self.file):
             widget.setEnabled(active)
+        self._show_default_state()
 
     def _show_names(self) -> None:
         name, stream, file = self.setup.names(self._session)

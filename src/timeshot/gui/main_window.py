@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import functools
 import html
 import logging
 import shutil
@@ -33,7 +34,7 @@ from timeshot.cameras import CameraError, CameraInfo, default_backend_name, list
 from timeshot.gui.camera_card import CameraCard
 from timeshot.gui.theme import ACCENT, RECORD, WARNING, app_icon
 from timeshot.session import CameraSetup, Phase, Problem, Session, check, with_extension
-from timeshot.settings import Settings
+from timeshot.settings import Settings, Templates
 
 log = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ class MainWindow(QMainWindow):
         )
         return root
 
-    def _build_top_bar(self) -> QHBoxLayout:
+    def _build_top_bar(self) -> QVBoxLayout:
         """Session, folder and recording options, which apply to every camera."""
         self.session_edit = QLineEdit(self._settings.session)
         self.session_edit.setMaximumWidth(140)
@@ -135,21 +136,26 @@ class MainWindow(QMainWindow):
         self.rescan_button.setToolTip("Look for cameras again, e.g. after plugging one in")
         self.rescan_button.clicked.connect(self.rescan)
 
-        top = QHBoxLayout()
-        top.addWidget(QLabel("Session"))
-        top.addWidget(self.session_edit)
-        top.addSpacing(16)
-        top.addWidget(QLabel("Folder"))
-        top.addWidget(self.folder_edit, 1)
-        top.addWidget(browse)
-        top.addSpacing(16)
-        top.addWidget(QLabel("Format"))
-        top.addWidget(self.format_box)
-        top.addSpacing(16)
-        top.addWidget(self.wait_box)
-        top.addWidget(self.numbers_box)
-        top.addSpacing(16)
-        top.addWidget(self.rescan_button)
+        where = QHBoxLayout()  # where the recordings go
+        where.addWidget(QLabel("Session"))
+        where.addWidget(self.session_edit)
+        where.addSpacing(16)
+        where.addWidget(QLabel("Folder"))
+        where.addWidget(self.folder_edit, 1)
+        where.addWidget(browse)
+        where.addSpacing(16)
+        where.addWidget(self.rescan_button)
+        how = QHBoxLayout()  # how they are recorded
+        how.addWidget(QLabel("Format"))
+        how.addWidget(self.format_box)
+        how.addSpacing(16)
+        how.addWidget(self.wait_box)
+        how.addSpacing(16)
+        how.addWidget(self.numbers_box)
+        how.addStretch(1)
+        top = QVBoxLayout()
+        top.addLayout(where)
+        top.addLayout(how)
         return top
 
     def _build_card_area(self) -> QScrollArea:
@@ -235,6 +241,8 @@ class MainWindow(QMainWindow):
             card = CameraCard(setup, self.session_edit.text())
             card.changed.connect(self._settings_changed)
             card.reopen.connect(self._open_cameras)
+            card.make_default.connect(functools.partial(self._make_default, card))
+            card.set_default_templates(self._default_templates())
             self._cards[setup.camera.key] = card
         self._lay_out_cards()
         self._open_cameras()
@@ -262,7 +270,23 @@ class MainWindow(QMainWindow):
             card.set_file_extension(extension)
         templates = self._settings.templates  # new cameras start with the chosen format too
         templates.file = with_extension(templates.file, extension)
+        self._show_default_templates()
         self._settings_changed()
+
+    def _make_default(self, card: CameraCard) -> None:
+        """New cameras start with this camera's name templates."""
+        setup = card.setup
+        self._settings.templates = Templates(setup.name, setup.stream, setup.file)
+        self._show_default_templates()
+        self._remember()
+
+    def _default_templates(self) -> tuple[str, str, str]:
+        templates = self._settings.templates
+        return templates.name, templates.stream, templates.file
+
+    def _show_default_templates(self) -> None:
+        for card in self._cards.values():
+            card.set_default_templates(self._default_templates())
 
     def _settings_changed(self) -> None:
         problems = check(self._setups, self.session_edit.text(), self._folder())

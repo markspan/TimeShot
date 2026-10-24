@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -92,6 +93,35 @@ def test_the_camera_number_fills_in_the_names(app: QApplication, window: MainWin
     assert "Video_7.avi" in card.result.text()
     window.close()
     assert '"number": 7' in (tmp_path / "settings.json").read_text(encoding="utf-8")
+
+
+def test_a_cameras_names_can_become_the_ones_new_cameras_start_with(
+    app: QApplication, window: MainWindow, tmp_path: Path
+) -> None:
+    assert pump(app, lambda: len(window._cards) == 2)
+    first, second = window._cards.values()
+    assert not first.default_button.isEnabled(), "its names are those new cameras start with already"
+    first.file.setText("Face_{s}_{i}.mkv")
+    first.file.textEdited.emit(first.file.text())
+    assert first.default_button.isEnabled()
+
+    first.default_button.click()
+    assert window._settings.templates.file == "Face_{s}_{i}.mkv"
+    assert not first.default_button.isEnabled()
+    assert second.default_button.isEnabled(), "the other camera's names now differ from them"
+    saved = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+    assert saved["templates"]["file"] == "Face_{s}_{i}.mkv"
+
+
+def test_the_cards_scroll_only_as_far_as_they_reach(app: QApplication, window: MainWindow) -> None:
+    assert pump(app, lambda: len(window._cards) == 2)
+    for size in ((1240, 780), (1240, 600), (700, 700)):
+        window.resize(*size)
+        pump(app, lambda: False, timeout=0.3)  # let the layout settle
+        reach = max(card.geometry().bottom() + 1 for card in window._cards.values())
+        reach += window.grid.contentsMargins().bottom()
+        overflow = max(0, reach - window._scroll.viewport().height())
+        assert window._scroll.verticalScrollBar().maximum() <= overflow, size
 
 
 def test_status_line_describes_the_camera() -> None:
