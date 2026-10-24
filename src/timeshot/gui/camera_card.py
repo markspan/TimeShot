@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QSizePolicy,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -195,6 +196,7 @@ class CameraCard(QFrame):
         self.modes = ModePicker(setup.camera.modes, setup.mode)
         self.modes.changed.connect(self._mode_changed)
 
+        self.number = self._number_field(setup.number)
         self.name = self._field(setup.name, "Camera name, stored in the LSL stream (camera_name)")
         self.stream = self._field(
             setup.stream, "Name of the camera's LSL marker stream, as LabRecorder lists it"
@@ -215,6 +217,7 @@ class CameraCard(QFrame):
 
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.addRow("Number", self.number)
         form.addRow("Mode", self.modes)
         form.addRow("Name", self.name)
         form.addRow("Stream", self.stream)
@@ -271,6 +274,15 @@ class CameraCard(QFrame):
 
     # ── internals ────────────────────────────────────────────────────────────
 
+    def _number_field(self, number: int) -> QSpinBox:
+        box = QSpinBox()
+        box.setRange(0, 999)
+        box.setValue(number)
+        box.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)  # a few digits wide
+        box.setToolTip("The camera's number: {i} in its names below. Kept for this camera.")
+        box.valueChanged.connect(self._number_changed)
+        return box
+
     def _field(self, text: str, tooltip: str) -> QLineEdit:
         edit = QLineEdit(text)
         edit.setToolTip(f"{tooltip}.\n{{i}} is the camera's number, {{s}} the session.")
@@ -283,6 +295,11 @@ class CameraCard(QFrame):
             self.stream.text(),
             self.file.text(),
         )
+        self._show_names()
+        self.changed.emit()
+
+    def _number_changed(self, number: int) -> None:
+        self.setup.number = number
         self._show_names()
         self.changed.emit()
 
@@ -301,7 +318,7 @@ class CameraCard(QFrame):
 
     def _set_inputs_enabled(self, editable: bool) -> None:
         active = editable and self.setup.enabled
-        for widget in (self.modes, self.name, self.stream, self.file):
+        for widget in (self.number, self.modes, self.name, self.stream, self.file):
             widget.setEnabled(active)
 
     def _show_names(self) -> None:

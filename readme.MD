@@ -22,7 +22,7 @@ TimeShot 2.0 runs on Windows, macOS (Intel) and Linux. It sends the same LSL mar
 ## Usage
 
 1. Start TimeShot. It finds the cameras and shows each one on a card with a live preview. Plugged one in later? Click **Find cameras**.
-2. On each card, tick the cameras to record and choose their mode (resolution, frame rate and format). The camera name, LSL stream name and video file name are templates: `{i}` becomes the camera's number and `{s}` the session.
+2. On each card, tick the cameras to record and choose their mode (resolution, frame rate and format). The camera name, LSL stream name and video file name are templates: `{i}` becomes the camera's **Number** and `{s}` the session. Each camera keeps its number, and its other settings, for next time, whatever order the cameras are listed in.
 3. At the top, fill in the session, the folder for the videos and the file format.
 4. Click **Record**. TimeShot creates each camera's LSL marker stream; with **Wait for LabRecorder** ticked (the default), recording starts once LabRecorder records all of them. Start LabRecorder's recording now.
 5. Click **Stop** to finish. The video files are complete once the **Record** button is back, with a summary of the recording next to it.

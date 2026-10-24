@@ -45,9 +45,9 @@ DEFAULT_FILE = "Video_{i}.avi"
 _UNSAFE_IN_FILE_NAMES = set('<>:"/\\|?*')
 
 
-def expand(template: str, index: int, session: str) -> str:
+def expand(template: str, number: int, session: str) -> str:
     """Fills in a name template: ``{i}`` is the camera's number, ``{s}`` the session."""
-    return template.replace("{i}", str(index)).replace("{s}", session).strip()
+    return template.replace("{i}", str(number)).replace("{s}", session).strip()
 
 
 @dataclass
@@ -55,7 +55,7 @@ class CameraSetup:
     """One camera's settings. ``name``, ``stream`` and ``file`` are templates (see :func:`expand`)."""
 
     camera: CameraInfo
-    index: int  # the camera's number in the list: {i}
+    number: int  # the camera's number: {i}
     enabled: bool = True
     mode: CameraMode | None = None
     name: str = DEFAULT_NAME
@@ -68,7 +68,7 @@ class CameraSetup:
 
     def names(self, session: str) -> tuple[str, str, str]:
         """The camera, stream and file names for ``session``."""
-        return tuple(expand(t, self.index, session) for t in (self.name, self.stream, self.file))  # type: ignore[return-value]
+        return tuple(expand(t, self.number, session) for t in (self.name, self.stream, self.file))  # type: ignore[return-value]
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,11 +1,13 @@
 """TimeShot's remembered settings, as a JSON file in the user's configuration folder.
 
 Cameras are remembered by their key (their name, numbered for identical cameras), so their
-settings come back when they are plugged in again, whatever port or order they end up in.
+settings come back when they are plugged in again, whatever port or order they end up in;
+that includes their number ({i} in the name templates), so their names stay the same too.
 """
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 from dataclasses import asdict, dataclass, field, fields
@@ -20,6 +22,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class CameraSettings:
+    number: int | None = None  # {i}; None: not given yet
     enabled: bool = True
     mode: str | None = None  # CameraMode.key()
     name: str = DEFAULT_NAME
@@ -62,17 +65,23 @@ class Settings:
         temporary.replace(path)  # never leaves a half-written file
 
     def setups(self, cameras: list[CameraInfo]) -> list[CameraSetup]:
-        """The present cameras with their remembered settings (defaults for new ones)."""
+        """The present cameras with their remembered settings (defaults for new ones). A camera
+        keeps its number; a new one gets the lowest number that no remembered camera has, even
+        an unplugged one, so that its names cannot clash with that camera's when it is back."""
+        taken = {s.number for s in self.cameras.values() if s.number is not None}
         setups = []
-        for index, camera in enumerate(cameras):
+        for camera in cameras:
             remembered = self.cameras.get(camera.key, CameraSettings())
-            mode = _mode(remembered.mode, camera)
+            number = remembered.number
+            if number is None:
+                number = next(n for n in itertools.count() if n not in taken)
+                taken.add(number)
             setups.append(
                 CameraSetup(
                     camera,
-                    index,
+                    number,
                     remembered.enabled,
-                    mode,
+                    _mode(remembered.mode, camera),
                     remembered.name,
                     remembered.stream,
                     remembered.file,
@@ -83,7 +92,12 @@ class Settings:
     def remember(self, setups: list[CameraSetup]) -> None:
         for setup in setups:
             self.cameras[setup.camera.key] = CameraSettings(
-                setup.enabled, setup.mode.key() if setup.mode else None, setup.name, setup.stream, setup.file
+                setup.number,
+                setup.enabled,
+                setup.mode.key() if setup.mode else None,
+                setup.name,
+                setup.stream,
+                setup.file,
             )
 
 

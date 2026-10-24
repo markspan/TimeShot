@@ -215,7 +215,7 @@ def _select(setups: list[CameraSetup], wanted: list[str] | None) -> list[CameraS
         return setups
     chosen = []
     for item in wanted:
-        match = [s for s in setups if item in (str(s.index), s.camera.key, s.camera.name)]
+        match = [s for s in setups if item in (str(s.number), s.camera.key, s.camera.name)]
         if not match:
             raise CameraError(f"no camera {item!r} (see 'timeshot devices')")
         chosen.extend(match[:1])

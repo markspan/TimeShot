@@ -83,6 +83,16 @@ def test_settings_are_remembered(app: QApplication, window: MainWindow, tmp_path
     assert '"session": "42"' in (tmp_path / "settings.json").read_text(encoding="utf-8")
 
 
+def test_the_camera_number_fills_in_the_names(app: QApplication, window: MainWindow, tmp_path: Path) -> None:
+    assert pump(app, lambda: bool(window.session.cameras))
+    card = next(iter(window._cards.values()))
+    card.number.setValue(7)
+    assert card.setup.number == 7
+    assert "Video_7.avi" in card.result.text()
+    window.close()
+    assert '"number": 7' in (tmp_path / "settings.json").read_text(encoding="utf-8")
+
+
 def test_status_line_describes_the_camera() -> None:
     mode = CameraMode(640, 480, 30.0)
     setup = CameraSetup(CameraInfo("0", "Cam", (mode,), "synthetic", "Cam"), 0)

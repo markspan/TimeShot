@@ -19,6 +19,9 @@ On macOS (Intel) and Linux, TimeShot 2.0 runs from source; see the readme.
 * **Cameras are found on computers without a microphone.** TimeShot 2.0.0 found no camera at all
   there: FFmpeg's list of DirectShow devices fails as a whole when the computer has no audio capture
   device. TimeShot now reads the device list FFmpeg logs, which lists the cameras regardless.
+* **Each camera has a Number you can set**: `{i}` in its names. A camera keeps its number for next
+  time, also when Windows lists the cameras in another order, so its file and stream names stay the
+  same; a new camera gets a number no other camera has.
 * **`TimeShot.exe devices --details`** shows why a camera is missing: the versions, every device the
   camera interface lists, and each camera's modes as FFmpeg reports them.
 

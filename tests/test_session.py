@@ -78,6 +78,7 @@ def test_settings_round_trip(tmp_path: Path) -> None:
     cameras[0].enabled = False
     cameras[1].mode = MODES[1]
     cameras[1].file = "Face_{s}.mkv"
+    cameras[1].number = 7
     settings.remember(cameras)
     settings.save(path)
 
@@ -87,6 +88,15 @@ def test_settings_round_trip(tmp_path: Path) -> None:
     assert not restored[0].enabled
     assert restored[1].mode == MODES[1]
     assert restored[1].names("12")[2] == "Face_12.mkv"
+    assert restored[1].number == 7
+
+
+def test_cameras_keep_their_number_and_new_ones_get_a_free_one() -> None:
+    cameras = [s.camera for s in setups(3)]
+    assert [s.number for s in Settings().setups(cameras)] == [0, 1, 2]
+    remembered = {"Camera model 1": CameraSettings(number=0), "Unplugged camera": CameraSettings(number=2)}
+    numbers = [s.number for s in Settings(cameras=remembered).setups(cameras)]
+    assert numbers == [1, 0, 3], "never a number another camera has, even an unplugged one"
 
 
 def test_a_remembered_mode_the_camera_no_longer_offers_is_replaced(tmp_path: Path) -> None:
