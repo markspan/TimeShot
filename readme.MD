@@ -4,6 +4,11 @@
 
 TimeShot 2.0 runs on Windows, macOS (Intel) and Linux. It sends the same LSL marker streams and writes the same kind of video files as TimeShot 1.x, so existing recordings and analysis scripts keep working.
 
+<p align="center">
+  <img src="docs/screenshot.png" width="800"
+       alt="The TimeShot window: session 7 and the folder at the top, the format and recording options below them, and two camera cards, each with a live preview, its number, its mode and its name templates, with the names they give: Video_1_s7.avi and Video_2_s7.avi">
+</p>
+
 ## Download
 
 **Windows:** get `TimeShot-<version>-windows-x64.zip` from the [latest release](https://github.com/markspan/TimeShot/releases/latest), unzip it anywhere and run `TimeShot\TimeShot.exe`. Everything is included, so nothing else needs installing. If Windows SmartScreen warns on the first start, choose *More info* > *Run anyway*.
@@ -22,7 +27,7 @@ TimeShot 2.0 runs on Windows, macOS (Intel) and Linux. It sends the same LSL mar
 ## Usage
 
 1. Start TimeShot. It finds the cameras and shows each one on a card with a live preview. Plugged one in later? Click **Find cameras**.
-2. On each card, tick the cameras to record and choose their mode (resolution, frame rate and format). The camera name, LSL stream name and video file name are templates: `{i}` becomes the camera's **Number** and `{s}` the session. Each camera keeps its number, and its other settings, for next time, whatever order the cameras are listed in.
+2. On each card, tick the cameras to record and choose their mode (resolution, frame rate and format). The camera name, LSL stream name and video file name are templates: `{i}` becomes the camera's **Number** and `{s}` the session. Each camera keeps its number, and its other settings, for next time, whatever order the cameras are listed in. **Use these names for new cameras** makes a card's templates the ones a camera seen for the first time starts with.
 3. At the top, fill in the session, the folder for the videos and the file format.
 4. Click **Record**. TimeShot creates each camera's LSL marker stream; with **Wait for LabRecorder** ticked (the default), recording starts once LabRecorder records all of them. Start LabRecorder's recording now.
 5. Click **Stop** to finish. The video files are complete once the **Record** button is back, with a summary of the recording next to it.
@@ -38,6 +43,10 @@ timeshot record -t 10                    # record every camera for 10 s, once La
 timeshot record --file Video_{i}.mp4     # record H.264 instead of camera JPEG; Ctrl+C stops
 timeshot record --help                   # everything else
 ```
+
+## Analysing recordings: MovieMerger
+
+[MovieMerger](https://github.com/markspan/MovieMerger) turns a recording into watchable, synchronised video. Give it LabRecorder's `.xdf` file and TimeShot's video files, and it retimes every video by its own LSL frame markers and places the audio from the XDF file sample-accurately underneath it. It makes one synchronised video per camera and a mosaic of all cameras in one picture, from a desktop app or from the command line. It reads all of TimeShot's formats (`.avi`, `.mkv` and `.mp4`).
 
 ## How the timing works
 

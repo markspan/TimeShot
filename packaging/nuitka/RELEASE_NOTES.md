@@ -25,13 +25,17 @@ On macOS (Intel) and Linux, TimeShot 2.0 runs from source; see the readme.
 * **The default name templates are in the settings file** (`%LOCALAPPDATA%\TimeShot\TimeShot\settings.json`,
   shown in the window's status line), under `templates`: the camera, stream and file names a camera seen
   for the first time starts with. Choosing a format also sets the format new cameras start with.
+  **Use these names for new cameras**, on each camera card, makes that card's templates those.
+* **The window** puts the recording options on a row of their own, so the folder has room, and no
+  longer shows a scroll bar beside cameras that fit.
 * **`TimeShot.exe devices --details`** shows why a camera is missing: the versions, every device the
   camera interface lists, and each camera's modes as FFmpeg reports them.
 
 ## TimeShot 2.0
 
 TimeShot 2.0 is a rewrite. It sends the same LSL marker streams and writes the same kind of video files
-as TimeShot 1.x, so LabRecorder recordings stay readable by MovieMerger and by existing analysis scripts.
+as TimeShot 1.x, so LabRecorder recordings stay readable by [MovieMerger](https://github.com/markspan/MovieMerger)
+and by existing analysis scripts.
 
 * **The camera's own JPEG frames are written untouched** (`.avi` or `.mkv`): no re-encoding, so
   identical quality at a fraction of the CPU. Burning each frame's number into the picture is optional.
