@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -95,3 +98,13 @@ def test_status_line_describes_the_camera() -> None:
     assert message is None
     state.stats = RecorderStats(30.0, 100, 1e5, 3.0, False, False, False, 0, 0, None)
     assert describe(state, Phase.PREVIEW, mode)[1] == "The camera stopped delivering frames"
+
+
+def test_the_app_process_does_not_load_liblsl() -> None:
+    """Only the recorder processes use LSL. Loaded in the app's own process before Qt, liblsl
+    can make Qt fail to load on Windows (see MarkerOutlet)."""
+    code = "import sys, timeshot.cli, timeshot.gui.app; print('pylsl' in sys.modules)"
+    environment = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
+    command = [sys.executable, "-c", code]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=True, env=environment)
+    assert result.stdout.strip() == "False"

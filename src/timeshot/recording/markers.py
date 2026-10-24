@@ -8,16 +8,24 @@ irregular rate, with ``video_file``, ``camera_name`` and ``measured_fps`` in its
 from __future__ import annotations
 
 import socket
-
-import pylsl
+from typing import TYPE_CHECKING
 
 from timeshot import __version__
+
+if TYPE_CHECKING:
+    import pylsl
 
 
 class MarkerOutlet:
     """One camera's marker stream. Visible to LabRecorder from creation until :meth:`close`."""
 
     def __init__(self, stream_name: str, *, camera_name: str, video_file: str, measured_fps: float) -> None:
+        # Imported here, in the recorder process, so that the app's own process never loads
+        # liblsl. On Windows, liblsl loads the C++ runtime (msvcp140.dll) from next to
+        # python.exe when there is a copy (Anaconda has one); loaded first, that copy is the one
+        # Qt gets as well, and a Qt built for a newer runtime then fails to load.
+        import pylsl  # noqa: PLC0415
+
         # Stable across restarts of this stream on this computer, so that LabRecorder can
         # re-find the stream after an interruption (see liblsl's documentation of source_id).
         source_id = f"{socket.gethostname()}-timeshot-{stream_name}"
