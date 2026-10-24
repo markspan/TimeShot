@@ -50,6 +50,13 @@ def expand(template: str, number: int, session: str) -> str:
     return template.replace("{i}", str(number)).replace("{s}", session).strip()
 
 
+def with_extension(template: str, extension: str) -> str:
+    """The file name template with ``extension`` in place of the video extension it has."""
+    suffix = Path(template).suffix
+    stem = template[: -len(suffix)] if suffix.lower() in FILE_TYPES else template
+    return stem + extension
+
+
 @dataclass
 class CameraSetup:
     """One camera's settings. ``name``, ``stream`` and ``file`` are templates (see :func:`expand`)."""

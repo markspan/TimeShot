@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
@@ -26,8 +25,7 @@ from PySide6.QtWidgets import (
 from timeshot.cameras.base import CameraMode
 from timeshot.gui.theme import OK, RECORD, WARNING
 from timeshot.recording.recorder import RecorderStats
-from timeshot.recording.writer import FILE_TYPES
-from timeshot.session import CameraSetup, CameraState, Phase, Problem
+from timeshot.session import CameraSetup, CameraState, Phase, Problem, with_extension
 
 # A camera that delivered nothing for this long is reported as stalled.
 STALL_SECONDS = 1.5
@@ -248,10 +246,7 @@ class CameraCard(QFrame):
 
     def set_file_extension(self, extension: str) -> None:
         """Gives the file name template ``extension``, in place of a video extension it has."""
-        template = self.setup.file
-        suffix = Path(template).suffix
-        stem = template[: -len(suffix)] if suffix.lower() in FILE_TYPES else template
-        self.file.setText(stem + extension)
+        self.file.setText(with_extension(self.setup.file, extension))
         self._names_edited()
 
     def set_problems(self, problems: list[Problem]) -> None:

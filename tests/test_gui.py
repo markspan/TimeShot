@@ -70,6 +70,7 @@ def test_the_format_choice_sets_every_file_extension(app: QApplication, window: 
     window.format_box.setCurrentIndex(mp4)
     window.format_box.activated.emit(mp4)
     assert all(setup.file.endswith(".mp4") for setup in window._setups)
+    assert window._settings.templates.file == "Video_{i}.mp4", "new cameras start with it too"
     card = next(iter(window._cards.values()))
     card.file.setText("Face_{s}.mkv")
     card.file.textEdited.emit(card.file.text())

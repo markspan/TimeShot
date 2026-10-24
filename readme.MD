@@ -27,6 +27,8 @@ TimeShot 2.0 runs on Windows, macOS (Intel) and Linux. It sends the same LSL mar
 4. Click **Record**. TimeShot creates each camera's LSL marker stream; with **Wait for LabRecorder** ticked (the default), recording starts once LabRecorder records all of them. Start LabRecorder's recording now.
 5. Click **Stop** to finish. The video files are complete once the **Record** button is back, with a summary of the recording next to it.
 
+TimeShot remembers its settings in a JSON file on this computer: on Windows `%LOCALAPPDATA%\TimeShot\TimeShot\settings.json` (the window's status line shows where). It holds the session, the folder, the two options, every camera's number, mode and name templates, and under `templates` the names a camera seen for the first time starts with. Edit it while TimeShot is closed: TimeShot writes it again as it closes.
+
 Without the window, from a terminal (`TimeShot.exe` on Windows, `timeshot` when run from source):
 
 ```bash

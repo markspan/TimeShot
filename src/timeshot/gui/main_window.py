@@ -32,7 +32,7 @@ from timeshot import __version__
 from timeshot.cameras import CameraError, CameraInfo, default_backend_name, list_cameras
 from timeshot.gui.camera_card import CameraCard
 from timeshot.gui.theme import ACCENT, RECORD, WARNING, app_icon
-from timeshot.session import CameraSetup, Phase, Problem, Session, check
+from timeshot.session import CameraSetup, Phase, Problem, Session, check, with_extension
 from timeshot.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -90,7 +90,10 @@ class MainWindow(QMainWindow):
         layout.addLayout(self._build_top_bar())
         layout.addWidget(self._build_card_area(), 1)
         layout.addLayout(self._build_bottom_bar())
-        self.statusBar().showMessage(f"TimeShot {__version__} · cameras via {default_backend_name()}")
+        self.statusBar().showMessage(
+            f"TimeShot {__version__} · cameras via {default_backend_name()}"
+            f" · settings in {self._settings_path}"
+        )
         return root
 
     def _build_top_bar(self) -> QHBoxLayout:
@@ -254,8 +257,11 @@ class MainWindow(QMainWindow):
             self.folder_edit.setText(folder)
 
     def _format_chosen(self, index: int) -> None:
+        extension = self.format_box.itemData(index)
         for card in self._cards.values():
-            card.set_file_extension(self.format_box.itemData(index))
+            card.set_file_extension(extension)
+        templates = self._settings.templates  # new cameras start with the chosen format too
+        templates.file = with_extension(templates.file, extension)
         self._settings_changed()
 
     def _settings_changed(self) -> None:

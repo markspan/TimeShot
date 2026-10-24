@@ -22,6 +22,9 @@ On macOS (Intel) and Linux, TimeShot 2.0 runs from source; see the readme.
 * **Each camera has a Number you can set**: `{i}` in its names. A camera keeps its number for next
   time, also when Windows lists the cameras in another order, so its file and stream names stay the
   same; a new camera gets a number no other camera has.
+* **The default name templates are in the settings file** (`%LOCALAPPDATA%\TimeShot\TimeShot\settings.json`,
+  shown in the window's status line), under `templates`: the camera, stream and file names a camera seen
+  for the first time starts with. Choosing a format also sets the format new cameras start with.
 * **`TimeShot.exe devices --details`** shows why a camera is missing: the versions, every device the
   camera interface lists, and each camera's modes as FFmpeg reports them.
 

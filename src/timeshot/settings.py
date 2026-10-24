@@ -3,6 +3,7 @@
 Cameras are remembered by their key (their name, numbered for identical cameras), so their
 settings come back when they are plugged in again, whatever port or order they end up in;
 that includes their number ({i} in the name templates), so their names stay the same too.
+A camera seen for the first time starts with the name templates under "templates".
 """
 
 from __future__ import annotations
@@ -31,11 +32,21 @@ class CameraSettings:
 
 
 @dataclass
+class Templates:
+    """The name templates a camera starts with; each camera's own can be edited after that."""
+
+    name: str = DEFAULT_NAME
+    stream: str = DEFAULT_STREAM
+    file: str = DEFAULT_FILE
+
+
+@dataclass
 class Settings:
     session: str = "1"
     folder: str = ""  # empty: the GUI suggests the user's video folder
     wait_for_labrecorder: bool = True
     frame_numbers: bool = False
+    templates: Templates = field(default_factory=Templates)
     cameras: dict[str, CameraSettings] = field(default_factory=dict)
 
     @classmethod
@@ -48,14 +59,12 @@ class Settings:
         except (OSError, ValueError) as error:
             log.warning("Ignoring unreadable settings %s: %s", path, error)
             return cls()
-        known = {f.name for f in fields(cls)} - {"cameras"}
-        settings = cls(**{k: v for k, v in data.items() if k in known})
-        camera_fields = {f.name for f in fields(CameraSettings)}
+        settings = cls(**_known(cls, data, exclude={"templates", "cameras"}))
+        if isinstance(templates := data.get("templates"), dict):
+            settings.templates = Templates(**_known(Templates, templates))
         for key, values in (data.get("cameras") or {}).items():
             if isinstance(values, dict):
-                settings.cameras[key] = CameraSettings(
-                    **{k: v for k, v in values.items() if k in camera_fields}
-                )
+                settings.cameras[key] = CameraSettings(**_known(CameraSettings, values))
         return settings
 
     def save(self, path: Path) -> None:
@@ -70,8 +79,11 @@ class Settings:
         an unplugged one, so that its names cannot clash with that camera's when it is back."""
         taken = {s.number for s in self.cameras.values() if s.number is not None}
         setups = []
+        templates = self.templates
         for camera in cameras:
-            remembered = self.cameras.get(camera.key, CameraSettings())
+            remembered = self.cameras.get(camera.key) or CameraSettings(
+                name=templates.name, stream=templates.stream, file=templates.file
+            )
             number = remembered.number
             if number is None:
                 number = next(n for n in itertools.count() if n not in taken)
@@ -99,6 +111,15 @@ class Settings:
                 setup.stream,
                 setup.file,
             )
+
+
+def _known(
+    cls: type, values: dict[str, Any], exclude: frozenset[str] | set[str] = frozenset()
+) -> dict[str, Any]:
+    """The entries of ``values`` that are fields of the dataclass ``cls`` (ignoring others, such
+    as those of a newer TimeShot), less those in ``exclude``."""
+    names = {f.name for f in fields(cls)} - exclude
+    return {k: v for k, v in values.items() if k in names}
 
 
 def _mode(key: str | None, camera: CameraInfo) -> CameraMode | None:

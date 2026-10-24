@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from timeshot.cameras.base import RAW, CameraInfo, CameraMode
-from timeshot.session import CameraSetup, check, expand
+from timeshot.session import CameraSetup, check, expand, with_extension
 from timeshot.settings import CameraSettings, Settings
 
 MODES = (CameraMode(1920, 1080, 30.0), CameraMode(640, 480, 30.0, RAW, "yuyv422"))
@@ -97,6 +98,23 @@ def test_cameras_keep_their_number_and_new_ones_get_a_free_one() -> None:
     remembered = {"Camera model 1": CameraSettings(number=0), "Unplugged camera": CameraSettings(number=2)}
     numbers = [s.number for s in Settings(cameras=remembered).setups(cameras)]
     assert numbers == [1, 0, 3], "never a number another camera has, even an unplugged one"
+
+
+def test_the_settings_file_holds_the_templates_new_cameras_start_with(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    Settings().save(path)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["templates"] == {"name": "Camera {i}", "stream": "Stream_{i}", "file": "Video_{i}.avi"}
+
+    path.write_text('{"templates": {"stream": "Lab_{s}_{i}", "file": "Rec_{s}_{i}.mp4"}}', encoding="utf-8")
+    setup = Settings.load(path).setups([setups(1)[0].camera])[0]
+    assert setup.names("7") == ("Camera 0", "Lab_7_0", "Rec_7_0.mp4"), "missing ones: the built-in template"
+
+
+def test_a_file_template_gets_another_video_extension() -> None:
+    assert with_extension("Video_{i}.avi", ".mp4") == "Video_{i}.mp4"
+    assert with_extension("Face", ".mkv") == "Face.mkv"
+    assert with_extension("lab.v2_{i}", ".mp4") == "lab.v2_{i}.mp4", "only a video extension is replaced"
 
 
 def test_a_remembered_mode_the_camera_no_longer_offers_is_replaced(tmp_path: Path) -> None:
