@@ -35,7 +35,7 @@ def decoder_for(mode: CameraMode) -> av.VideoCodecContext:
     """
     decoder = av.CodecContext.create(mode.codec, "r")
     if not isinstance(decoder, av.VideoCodecContext):
-        raise TypeError(f"{mode.codec} is not a video codec")
+        raise TypeError(f"Our apologies: {mode.codec} is, regrettably, not a video codec.")
     if not mode.is_jpeg:
         # Raw frames carry no header: the decoder must be told what they hold.
         decoder.width = mode.width
@@ -59,7 +59,7 @@ def decode(decoder: av.VideoCodecContext, frame: Frame) -> av.VideoFrame:
     """
     pictures = decoder.decode(av.Packet(frame.data))
     if not pictures:
-        raise ValueError("the frame decoded to no picture")
+        raise ValueError("We are sorry, but the frame decoded to no picture at all.")
     return pictures[0]
 
 
@@ -105,7 +105,7 @@ def jpeg_encoder(width: int, height: int, quality: int = JPEG_QUALITY) -> av.Vid
     """
     encoder = av.CodecContext.create(JPEG, "w")
     if not isinstance(encoder, av.VideoCodecContext):
-        raise TypeError("mjpeg is not a video codec")
+        raise TypeError("Our apologies: mjpeg is, regrettably, not a video codec.")
     encoder.width = width
     encoder.height = height
     encoder.pix_fmt = ENCODED_PIXEL_FORMAT
@@ -127,5 +127,8 @@ def encode_jpeg(encoder: av.VideoCodecContext, picture: av.VideoFrame) -> bytes:
     packets = encoder.encode(picture.reformat(format=ENCODED_PIXEL_FORMAT))
     # The JPEG encoder never holds frames back: one picture in, one frame out.
     if len(packets) != 1:
-        raise RuntimeError(f"the JPEG encoder returned {len(packets)} packets for one picture")
+        raise RuntimeError(
+            f"Most unexpectedly, and with our apologies, the JPEG encoder returned {len(packets)} packets"
+            " for one picture."
+        )
     return bytes(packets[0])

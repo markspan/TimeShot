@@ -165,7 +165,9 @@ def check(setups: Iterable[CameraSetup], session: str, folder: Path) -> list[Pro
     """
     enabled = [setup for setup in setups if setup.enabled]
     if not enabled:
-        return [Problem("Select at least one camera.")]
+        return [
+            Problem("Would you be so very kind as to select at least one camera? We would be most grateful.")
+        ]
     problems = [problem for setup in enabled for problem in _setup_problems(setup, session, folder)]
     return problems + _clashes(enabled, session)
 
@@ -185,15 +187,21 @@ def _setup_problems(setup: CameraSetup, session: str, folder: Path) -> list[Prob
     names = setup.names(session)
     problems = []
     if setup.mode is None:
-        problems.append(Problem("This camera offers no mode TimeShot can record.", key))
+        problems.append(
+            Problem("We are terribly sorry, but this camera offers no mode TimeShot can record.", key)
+        )
     if not names.name:
-        problems.append(Problem("The camera name is empty.", key))
+        problems.append(Problem("Might we trouble you for a camera name? It is empty at the moment.", key))
     if not names.stream:
-        problems.append(Problem("The stream name is empty.", key))
+        problems.append(Problem("Might we trouble you for a stream name? It is empty at the moment.", key))
     if (file_problem := _file_problem(names.file)) is not None:
         problems.append(Problem(file_problem, key))
     elif (folder / names.file).exists():
-        problems.append(Problem(f"{names.file} exists and will be overwritten.", key, confirm=True))
+        message = (
+            f"Please forgive the interruption, but {names.file} exists already and would, with your kind"
+            " permission, be overwritten."
+        )
+        problems.append(Problem(message, key, confirm=True))
     return problems
 
 
@@ -217,7 +225,11 @@ def _clashes(setups: list[CameraSetup], session: str) -> list[Problem]:
         if _file_problem(names.file) is None:
             cameras_by_file[names.file.lower()].append(setup.camera.key)
     return [
-        Problem(f"Another camera has the same {kind} ({value}).", key)
+        Problem(
+            f"We are terribly sorry, but another camera has the same {kind} ({value})."
+            " Would you kindly give each camera its own?",
+            key,
+        )
         for kind, cameras_by_name in (("stream name", cameras_by_stream), ("file name", cameras_by_file))
         for value, keys in cameras_by_name.items()
         if len(keys) > 1
@@ -235,10 +247,13 @@ def _file_problem(file: str) -> str | None:
         What is wrong with it, or None if it can be used.
     """
     if not file:
-        return "The file name is empty."
+        return "Might we trouble you for a file name? It is empty at the moment."
     if set(file) & _UNSAFE_IN_FILE_NAMES:
-        return f"The file name {file!r} contains a character not allowed in file names."
+        return (
+            f"We are sorry, but the file name {file!r} contains a character that file names, alas,"
+            " may not contain."
+        )
     if Path(file).suffix.lower() not in FILE_TYPES:
         *others, last = FILE_TYPES
-        return f"The file name {file!r} must end in {', '.join(others)} or {last}."
+        return f"Would you be so kind as to end the file name {file!r} in {', '.join(others)} or {last}?"
     return None

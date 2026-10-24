@@ -173,7 +173,7 @@ class CameraRecorder:
         """
         with self._record_lock:
             if self._outlet is not None:
-                raise RuntimeError("the stream is already open")
+                raise RuntimeError("We are sorry, but the LSL stream is already open.")
             self._outlet = MarkerOutlet(
                 stream_name, camera_name=self.camera_name, video_file=video_file, measured_fps=self.fps
             )
@@ -202,9 +202,11 @@ class CameraRecorder:
         """
         with self._record_lock:
             if self._outlet is None:
-                raise RuntimeError("open the stream before recording")
+                raise RuntimeError(
+                    "We would be most grateful if you would kindly open the LSL stream before recording."
+                )
             if self._writer is not None:
-                raise RuntimeError("already recording")
+                raise RuntimeError("We are sorry, but a recording is already running.")
         # Created outside the lock: opening a file and an encoder takes a while, and the
         # capture thread must not wait for it.
         writer = VideoWriter(path, self._stream.mode, frame_numbers=frame_numbers)
@@ -224,7 +226,7 @@ class CameraRecorder:
         with self._record_lock:
             writer, self._writer = self._writer, None
         if writer is None:
-            raise RuntimeError("not recording")
+            raise RuntimeError("We are sorry, but no recording is running.")
         return RecordingResult(self._markers_sent, writer.close())
 
     # ── state for displays ───────────────────────────────────────────────────
@@ -266,7 +268,8 @@ class CameraRecorder:
         if self._thread.is_alive():
             self._thread.join(STOP_TIMEOUT)
             if self._thread.is_alive():
-                log.warning("%s: the camera did not stop delivering; leaving it to the process exit.",
+                log.warning("%s: we are terribly sorry, but the camera would not stop delivering, so we"
+                            " leave it, most respectfully, to the end of the process.",
                             self.camera_name)  # fmt: skip
         return result
 
@@ -285,8 +288,10 @@ class CameraRecorder:
                 self._error = str(error)
                 log.error("%s: %s", self.camera_name, error)
         except Exception as error:
-            self._error = f"{type(error).__name__}: {error}"
-            log.exception("%s: capture failed", self.camera_name)
+            self._error = (
+                f"We are deeply sorry, but capture failed unexpectedly ({type(error).__name__}: {error})."
+            )
+            log.exception("%s: %s", self.camera_name, self._error)
         finally:
             self._stream.close()  # only this thread ever touches the camera
 

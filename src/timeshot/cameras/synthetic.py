@@ -32,6 +32,9 @@ MODES = (
 SEQUENCE_BITS = 16
 BLOCK = 16
 
+# What read() raises once the camera is closed.
+_CLOSED = "The camera has been closed, as requested. Thank you kindly."
+
 # The JPEG quality of the frames (FFmpeg's scale, 2 to 31): the pattern only needs to stay legible.
 JPEG_QUALITY = 5
 
@@ -99,7 +102,7 @@ class SyntheticBackend:
             CameraError: There is no camera with this id, or it cannot deliver this mode.
         """
         if not camera_id.isdigit() or int(camera_id) >= self.count:
-            raise CameraError(f"no synthetic camera {camera_id!r}")
+            raise CameraError(f"We are terribly sorry, but there is no synthetic camera {camera_id!r}.")
         return SyntheticStream(mode, hue=int(camera_id))
 
 
@@ -123,7 +126,7 @@ class SyntheticStream:
             CameraError: The mode asks for a raw format other than yuyv422.
         """
         if mode.codec == RAW and mode.pixel_format != "yuyv422":
-            raise CameraError("synthetic cameras deliver raw frames as yuyv422 only")
+            raise CameraError("Please forgive us, but synthetic cameras deliver raw frames as yuyv422 only.")
         self._mode = mode
         self._hue = hue
         self._interval = 1.0 / mode.fps if paced else 0.0
@@ -149,14 +152,14 @@ class SyntheticStream:
         now = time.perf_counter()
         if now < self._next_due:
             if self._closed.wait(self._next_due - now):
-                raise CameraError("camera closed")
+                raise CameraError(_CLOSED)
         elif self._interval:
             # Too late for one or more frames: skip them, as a camera with a small buffer does.
             missed = int((now - self._next_due) / self._interval)
             self._sequence += missed
             self._next_due += missed * self._interval
         if self._closed.is_set():
-            raise CameraError("camera closed")
+            raise CameraError(_CLOSED)
         frame = Frame(self._render(self._sequence), self._mode)
         self._sequence += 1
         self._next_due += self._interval

@@ -128,10 +128,19 @@ class Settings:
         except FileNotFoundError:
             return cls()
         except (OSError, ValueError) as error:
-            log.warning("Ignoring unreadable settings %s: %s", path, error)
+            log.warning(
+                "We are terribly sorry, but the settings in %s could not be read (%s), so we have taken the"
+                " liberty of starting with the defaults.",
+                path,
+                error,
+            )
             return cls()
         if not isinstance(data, dict):
-            log.warning("Ignoring settings %s: not a JSON object", path)
+            log.warning(
+                "We are sorry, but the settings in %s are not a JSON object, so we have taken the liberty of"
+                " starting with the defaults.",
+                path,
+            )
             return cls()
 
         settings = cls(**_valid_fields(cls, data, skip={"templates", "cameras"}))

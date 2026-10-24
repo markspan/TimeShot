@@ -73,8 +73,8 @@ def main() -> int:
 def check_real_camera_listing(executable: Path) -> None:
     """Lists the computer's own cameras through the real camera interface (DirectShow on Windows).
 
-    A build machine usually has no camera and no microphone: that must come out as "No
-    cameras found", not as an error.
+    A build machine usually has no camera and no microphone: that must come out as an apology
+    that no cameras were found, not as an error.
 
     Args:
         executable: The compiled TimeShot.exe.

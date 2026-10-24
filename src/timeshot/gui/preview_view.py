@@ -58,7 +58,7 @@ class PreviewView(QWidget):
         """Shows a message in place of the image.
 
         Args:
-            message: The message, e.g. "Camera unavailable"; it clears the image, which would
+            message: The message, e.g. that the camera is unavailable; it clears the image, which would
                 be stale. None shows the image only.
         """
         if message != self._message:

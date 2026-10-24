@@ -104,7 +104,12 @@ def encoder_for(mode: CameraMode) -> H264Encoder:
     try:
         open_context(encoder, mode)
     except (av.FFmpegError, ValueError, OSError):
-        log.warning("%s cannot encode %s; using %s.", encoder.label, mode.size_label, SOFTWARE_ENCODER.label)
+        log.warning(
+            "We are sorry to say that %s cannot encode %s, so we have taken the liberty of using %s instead.",
+            encoder.label,
+            mode.size_label,
+            SOFTWARE_ENCODER.label,
+        )
         return SOFTWARE_ENCODER
     return encoder
 
@@ -142,7 +147,7 @@ def open_context(encoder: H264Encoder, mode: CameraMode) -> av.VideoCodecContext
     """
     context = av.CodecContext.create(encoder.name, "w")
     if not isinstance(context, av.VideoCodecContext):
-        raise TypeError(f"{encoder.name} is not a video encoder")
+        raise TypeError(f"Our apologies: {encoder.name} is, regrettably, not a video encoder.")
     configure(context, encoder, mode)
     context.open()
     return context

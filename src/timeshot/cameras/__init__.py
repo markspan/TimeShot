@@ -97,7 +97,7 @@ def get_backend(name: str | None = None) -> CameraBackend:
 
             return V4l2Backend()
         case unknown:
-            raise CameraError(f"unknown camera backend {unknown!r}")
+            raise CameraError(f"We humbly apologize, but we know of no camera backend called {unknown!r}.")
 
 
 def list_cameras(backend: CameraBackend | None = None) -> list[CameraInfo]:

@@ -23,7 +23,17 @@ from typing import NamedTuple
 import av
 import av.logging
 
-from timeshot.cameras.base import JPEG, RAW, CameraError, CameraInfo, CameraMode, Frame, frame_rates
+from timeshot.cameras.base import (
+    JPEG,
+    NO_USABLE_MODE,
+    RAW,
+    CameraError,
+    CameraInfo,
+    CameraMode,
+    Frame,
+    camera_stopped,
+    frame_rates,
+)
 
 log = logging.getLogger(__name__)
 
@@ -85,7 +95,7 @@ class FfmpegBackend(ABC):
             CameraError: It does not (PyAV's wheels have each platform's own input only).
         """
         if self.name not in av.formats_available:
-            raise CameraError(f"this FFmpeg build has no {self.name} input")
+            raise CameraError(f"We are so sorry, but this FFmpeg build regrettably has no {self.name} input.")
 
     def list_cameras(self) -> list[CameraInfo]:
         """The devices that offer at least one mode TimeShot can record.
@@ -100,7 +110,7 @@ class FfmpegBackend(ABC):
             if modes:
                 cameras.append(CameraInfo(device.id, device.name, tuple(modes), self.name))
             elif device.video:
-                log.warning("Camera %r offers no mode TimeShot can record; left out.", device.name)
+                log.warning(NO_USABLE_MODE, device.name)
             else:
                 log.debug("%r offers no video mode; left out.", device.name)
         return cameras
@@ -122,7 +132,9 @@ class FfmpegBackend(ABC):
         try:
             container = av.open(self._url(camera_id), format=self.name, options=options)
         except av.FFmpegError as error:
-            raise CameraError(f"could not open the camera in {mode}: {error}") from error
+            raise CameraError(
+                f"We deeply regret that the camera would not open in {mode} ({error})."
+            ) from error
         return FfmpegStream(container, mode)
 
     def _ffmpeg_log(self, url: str, options: dict[str, str], what: str) -> str:
@@ -205,8 +217,8 @@ class FfmpegStream:
                 if packet.size:  # the demuxer ends with an empty packet
                     return Frame(bytes(packet), self._mode)
         except av.FFmpegError as error:
-            raise CameraError(f"the camera stopped delivering frames: {error}") from error
-        raise CameraError("the camera stopped delivering frames")
+            raise camera_stopped(error) from error
+        raise camera_stopped()
 
     def close(self) -> None:
         """Releases the camera. Safe to call more than once."""

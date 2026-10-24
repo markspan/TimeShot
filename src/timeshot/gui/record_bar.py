@@ -70,8 +70,8 @@ class RecordBar(QWidget):
                 streams = ", ".join(html.escape(s.setup.names(session).stream) for s in rig.cameras.values())
                 self._show_button("Cancel", PLAIN_BUTTON_STYLE)
                 self.phase_label.setText(
-                    f"{colored('Waiting for LabRecorder', WARNING, bold=True)}: "
-                    f"record {streams} in LabRecorder ({connected} of {len(rig.cameras)} connected)."
+                    f"{colored('Waiting patiently for LabRecorder', WARNING, bold=True)}: would you kindly"
+                    f" record {streams} in LabRecorder? ({connected} of {len(rig.cameras)} connected)"
                 )
             case Phase.RECORDING:
                 self._show_button("■  Stop", PLAIN_BUTTON_STYLE + " QPushButton { font-weight: bold; }")
@@ -130,7 +130,9 @@ def _last_recording(results: dict[str, RecordingResult]) -> str:
         return ""
     failed = [key for key, result in results.items() if not result.ok]
     if failed:
-        return colored(f"Last recording: problems with {', '.join(failed)}.", RECORD)
+        return colored(
+            f"We are terribly sorry, but the last recording had problems with {', '.join(failed)}.", RECORD
+        )
     frames = sum(result.file.frames_written for result in results.values())
     return f"Last recording: {len(results)} file(s), {frames:,} frames, every frame with its marker."
 

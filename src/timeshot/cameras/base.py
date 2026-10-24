@@ -28,8 +28,28 @@ _MODE_KEY = re.compile(
 )
 
 
+# Logged by a backend that leaves out a device without a mode TimeShot can record (%r: its name).
+NO_USABLE_MODE = (
+    "We are terribly sorry to report that camera %r offers no mode TimeShot can record,"
+    " so we have, most reluctantly, left it out."
+)
+
+
 class CameraError(Exception):
     """A camera could not be listed, opened or read."""
+
+
+def camera_stopped(cause: Exception | None = None) -> CameraError:
+    """The error a camera backend raises when its camera stops delivering frames.
+
+    Args:
+        cause: What the backend reported, if anything; it is added to the message.
+
+    Returns:
+        The error, to raise.
+    """
+    detail = f" ({cause})" if cause else ""
+    return CameraError(f"We regret to inform you that the camera has stopped delivering frames{detail}.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,11 +123,15 @@ class CameraMode:
         match = _MODE_KEY.fullmatch(text.strip())
         if not match:
             raise ValueError(
-                f"not a camera mode: {text!r} (expected e.g. 1920x1080@30 or 640x480@30:rawvideo)"
+                f"We are terribly sorry, but {text!r} does not look like a camera mode to us."
+                " Might we humbly suggest something like 1920x1080@30 or 640x480@30:rawvideo?"
             )
         codec = match["codec"] or JPEG
         if codec not in (JPEG, RAW):
-            raise ValueError(f"unknown frame format {codec!r} in {text!r}: use {JPEG} or {RAW}")
+            raise ValueError(
+                f"Please forgive us, but we do not know the frame format {codec!r} in {text!r}."
+                f" Would you be so kind as to use {JPEG} or {RAW}?"
+            )
         return cls(int(match["w"]), int(match["h"]), float(match["fps"]), codec, match["pix"])
 
 

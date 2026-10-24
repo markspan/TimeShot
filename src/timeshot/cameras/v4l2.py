@@ -9,7 +9,17 @@ from __future__ import annotations
 import logging
 from typing import Any, NamedTuple
 
-from timeshot.cameras.base import JPEG, RAW, CameraError, CameraInfo, CameraMode, Frame, frame_rates
+from timeshot.cameras.base import (
+    JPEG,
+    NO_USABLE_MODE,
+    RAW,
+    CameraError,
+    CameraInfo,
+    CameraMode,
+    Frame,
+    camera_stopped,
+    frame_rates,
+)
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +57,10 @@ def _linuxpy() -> Any:
     try:
         from linuxpy.video import device  # noqa: PLC0415  (Linux-only dependency)
     except ImportError as error:  # pragma: no cover - only without the dependency
-        raise CameraError("linuxpy is needed for cameras on Linux: pip install linuxpy") from error
+        raise CameraError(
+            "We are terribly sorry, but cameras on Linux need linuxpy, which is not installed."
+            " Would you be so kind as to run: pip install linuxpy"
+        ) from error
     return device
 
 
@@ -73,12 +86,14 @@ class V4l2Backend:
                     formats = sorted({frame_type.pixel_format.name for frame_type in device.info.frame_types})
                     log.debug("%s (%s) offers %s", name, device.filename, ", ".join(formats) or "nothing")
             except OSError as error:
-                log.warning("Skipping %s: %s", device.filename, error)
+                log.warning(
+                    "Our apologies: we had to skip %s, which would not open (%s).", device.filename, error
+                )
                 continue
             if modes:
                 cameras.append(CameraInfo(str(device.filename), name, tuple(modes), self.name))
             else:
-                log.warning("Camera %r offers no mode TimeShot can record; left out.", name)
+                log.warning(NO_USABLE_MODE, name)
         return cameras
 
     def open(self, camera_id: str, mode: CameraMode) -> V4l2Stream:
@@ -134,7 +149,7 @@ def _fourcc_for(mode: CameraMode) -> str:
     for fourcc, known in PIXEL_FORMATS.items():
         if known.codec == mode.codec and (mode.is_jpeg or known.pixel_format == mode.pixel_format):
             return fourcc
-    raise CameraError(f"V4L2 has no pixel format for {mode.format_label}")
+    raise CameraError(f"We are sorry, but V4L2 regrettably offers no pixel format for {mode.format_label}.")
 
 
 class V4l2Stream:
@@ -164,7 +179,8 @@ class V4l2Stream:
             known = PIXEL_FORMATS.get(granted.pixel_format.name)
             if known is None:
                 raise CameraError(
-                    f"the camera switched to the unsupported format {granted.pixel_format.name}"
+                    f"With our apologies: the camera insisted on the format {granted.pixel_format.name},"
+                    " which TimeShot, alas, cannot record."
                 )
             width = int(granted.width)
             self._mode = CameraMode(width, int(granted.height), fps, known.codec, known.pixel_format)
@@ -173,7 +189,9 @@ class V4l2Stream:
             self._row_bytes = int(granted.bytes_per_line)
             self._packed_row_bytes = width * known.bytes_per_pixel if known.bytes_per_pixel else None
             if known.codec == RAW and self._packed_row_bytes is None and self._row_bytes not in (0, width):
-                raise CameraError(f"padded {known.pixel_format} frames are not supported")
+                raise CameraError(
+                    f"We are sorry, but padded {known.pixel_format} frames are, alas, not supported."
+                )
 
             self._capture = v4l2.VideoCapture(self._device, size=BUFFER_COUNT)
             self._capture.open()
@@ -182,7 +200,9 @@ class V4l2Stream:
             raise
         except (OSError, ValueError) as error:
             self._device.close()
-            raise CameraError(f"could not open {path} in {requested}: {error}") from error
+            raise CameraError(
+                f"We deeply regret that {path} would not open in {requested} ({error})."
+            ) from error
         self._closed = False
 
     @property
@@ -202,7 +222,7 @@ class V4l2Stream:
         try:
             frame = self._capture.buffer.read()
         except (OSError, AttributeError) as error:  # AttributeError: buffer gone after close()
-            raise CameraError(f"the camera stopped delivering frames: {error}") from error
+            raise camera_stopped(error) from error
         data = bytes(frame.data)
         packed = self._packed_row_bytes
         if packed and self._row_bytes > packed:

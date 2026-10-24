@@ -147,7 +147,7 @@ class CameraRig:
             RuntimeError: A recording runs (cameras change only between recordings).
         """
         if self.phase is not Phase.PREVIEW:
-            raise RuntimeError("change cameras only between recordings")
+            raise RuntimeError("We would kindly ask you to change cameras only between recordings.")
         wanted = {setup.camera.key: setup for setup in setups if setup.enabled and setup.mode is not None}
         for key, state in list(self.cameras.items()):
             # Compared with the mode the process was started in: the GUI edits setups in place.
@@ -182,10 +182,16 @@ class CameraRig:
             OSError: The folder could not be created.
         """
         if self.phase is not Phase.PREVIEW:
-            raise RuntimeError("already recording")
+            raise RuntimeError("We are sorry, but a recording is already running.")
+        if not self.cameras:
+            raise RuntimeError(
+                "We are sorry, but no camera is selected. Would you be so kind as to select one?"
+            )
         if not self.ready:
             not_ready = [state.setup.camera.name for state in self.cameras.values() if not state.ready]
-            raise RuntimeError(f"cameras not open: {', '.join(not_ready) or 'none selected'}")
+            raise RuntimeError(
+                f"We are terribly sorry, but these cameras are not open yet: {', '.join(not_ready)}."
+            )
         folder.mkdir(parents=True, exist_ok=True)
         self._plan = _Plan(session, folder, frame_numbers)
         self.results = {}

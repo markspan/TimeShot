@@ -32,11 +32,15 @@ def test_clashing_and_blank_names_are_problems(tmp_path: Path) -> None:
     set_file(cameras[1], "Video_0.avi")  # the file of camera 0
     cameras[2].templates = NameTemplates(name="", stream="Stream_0")  # the stream of camera 0
     problems = check(cameras, "1", tmp_path)
-    messages = {(p.camera, p.message) for p in problems}
-    assert ("Camera model 0", "Another camera has the same file name (video_0.avi).") in messages
-    assert ("Camera model 1", "Another camera has the same file name (video_0.avi).") in messages
-    assert ("Camera model 2", "Another camera has the same stream name (Stream_0).") in messages
-    assert ("Camera model 2", "The camera name is empty.") in messages
+
+    def told(camera: str, words: str) -> bool:
+        """Whether a problem of this camera says these words."""
+        return any(p.camera == camera and words in p.message for p in problems)
+
+    assert told("Camera model 0", "another camera has the same file name (video_0.avi)")
+    assert told("Camera model 1", "another camera has the same file name (video_0.avi)")
+    assert told("Camera model 2", "another camera has the same stream name (Stream_0)")
+    assert told("Camera model 2", "Might we trouble you for a camera name?")
     assert not any(p.confirm for p in problems)
 
 
@@ -47,9 +51,9 @@ def test_unusable_file_names_are_problems(tmp_path: Path) -> None:
     set_file(cameras[1], "sub/Video_{i}.avi")
     set_file(cameras[2], "")
     messages = [p.message for p in check(cameras, "1", tmp_path)]
-    assert any("must end in .avi, .mkv or .mp4" in m for m in messages)
-    assert any("not allowed in file names" in m for m in messages)
-    assert "The file name is empty." in messages
+    assert any("end the file name 'Video_0.mov' in .avi, .mkv or .mp4?" in m for m in messages)
+    assert any("contains a character that file names, alas, may not contain" in m for m in messages)
+    assert "Might we trouble you for a file name? It is empty at the moment." in messages
 
 
 def test_existing_files_only_need_confirming(tmp_path: Path) -> None:
@@ -66,7 +70,9 @@ def test_disabled_cameras_are_ignored_but_one_is_needed(tmp_path: Path) -> None:
     cameras[1].enabled = False
     assert check(cameras, "1", tmp_path) == []
     cameras[0].enabled = False
-    assert [p.message for p in check(cameras, "1", tmp_path)] == ["Select at least one camera."]
+    assert [p.message for p in check(cameras, "1", tmp_path)] == [
+        "Would you be so very kind as to select at least one camera? We would be most grateful."
+    ]
 
 
 def test_a_file_template_gets_another_video_extension() -> None:

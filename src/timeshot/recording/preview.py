@@ -52,7 +52,7 @@ class PreviewSlot:
             owner: Whether this side created the memory, and so frees it on :meth:`close`.
         """
         if memory.buf is None:
-            raise ValueError("shared memory without a buffer")
+            raise ValueError("We are sorry, but the shared memory came without a buffer.")
         self._memory = memory
         self._buffer: memoryview = memory.buf
         self.lock = lock
@@ -103,7 +103,10 @@ class PreviewSlot:
         """
         height, width = rgb.shape[:2]
         if width > MAX_WIDTH or height > MAX_HEIGHT:
-            raise ValueError(f"preview image {width}x{height} exceeds {MAX_WIDTH}x{MAX_HEIGHT}")
+            raise ValueError(
+                f"We are terribly sorry, but the preview image of {width}x{height} exceeds the"
+                f" {MAX_WIDTH}x{MAX_HEIGHT} preview box."
+            )
         with self.lock:
             sequence = _HEADER.unpack_from(self._buffer, 0)[0] + 1
             pixels = np.ndarray((height, width, 3), np.uint8, self._buffer, _HEADER.size)

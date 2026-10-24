@@ -135,7 +135,10 @@ class RecorderProcess:
             received += self.reports()
             self._process.join(0.05)
         if self._process.is_alive():
-            log.error("The recorder of %s did not end; stopping it.", self.config.camera.name)
+            log.error(
+                "We are terribly sorry, but the recorder of %s would not end, so we have had to stop it.",
+                self.config.camera.name,
+            )
             self._process.kill()
             self._process.join()
         received += self.reports()
@@ -157,11 +160,11 @@ def _unexpected_end(exit_code: int | None) -> str:
         in native code.
     """
     if exit_code is None:
-        return "The recorder process stopped responding."
+        return "We are terribly sorry, but the recorder process has stopped responding."
     if exit_code < 0:
-        return f"The recorder process was ended by signal {-exit_code}."
+        return f"We regret to inform you that the recorder process was ended by signal {-exit_code}."
     shown = f"0x{exit_code:08X}" if exit_code > 255 else str(exit_code)
-    return f"The recorder process ended unexpectedly (exit code {shown})."
+    return f"We are deeply sorry, but the recorder process ended unexpectedly (exit code {shown})."
 
 
 # ── in the recorder process ──────────────────────────────────────────────────
@@ -200,8 +203,9 @@ def run_recorder(
     try:
         _serve(recorder, connection)
     except Exception as error:
-        log.exception("The recorder failed")
-        _send(connection, Failed(f"{type(error).__name__}: {error}", fatal=True))
+        message = f"We are deeply sorry, but the recorder failed ({type(error).__name__}: {error})."
+        log.exception("%s", message)
+        _send(connection, Failed(message, fatal=True))
     finally:
         result = recorder.close()
         if result is not None:
@@ -247,7 +251,8 @@ def _serve(recorder: CameraRecorder, connection: Connection) -> None:
             try:
                 _execute(recorder, command, connection)
             except (OSError, RuntimeError, ValueError) as error:
-                _send(connection, Failed(f"{type(command).__name__}: {error}", fatal=False))
+                message = f"We are terribly sorry, but {_activity(command)} did not work out. {error}"
+                _send(connection, Failed(message, fatal=False))
         stats = recorder.stats()
         _send(connection, Status(stats))
         if stats.error and not error_reported:  # a camera that stopped: reported once
@@ -277,3 +282,16 @@ def _execute(recorder: CameraRecorder, command: Command, connection: Connection)
             if recorder.recording:
                 _send(connection, Recorded(recorder.stop_recording()))
             recorder.close_stream()
+
+
+def _activity(command: Command) -> str:
+    """What carrying out a command does, for messages, e.g. "starting the recording"."""
+    match command:
+        case OpenStream():
+            return "opening the LSL stream"
+        case StartRecording():
+            return "starting the recording"
+        case CloseStream():
+            return "closing the LSL stream"
+        case Shutdown():
+            return "shutting down"

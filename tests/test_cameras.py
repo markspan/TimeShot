@@ -14,6 +14,7 @@ import pytest
 from timeshot.cameras import ffmpeg
 from timeshot.cameras.base import (
     JPEG,
+    NO_USABLE_MODE,
     RAW,
     CameraInfo,
     CameraMode,
@@ -179,7 +180,7 @@ def test_dshow_also_tries_devices_whose_media_types_ffmpeg_could_not_tell(
     assert [c.name for c in cameras] == ["Elgato Facecam MK.2", "USB Camera (1080p)"]
     assert not any("wave_" in url for url in asked), "audio devices are not asked for video modes"
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-    assert warnings == ["Camera 'Broken camera' offers no mode TimeShot can record; left out."]
+    assert warnings == [NO_USABLE_MODE % "Broken camera"], "the only camera without a mode, apologized for"
     assert any("Could not find any video pin" in r.getMessage() for r in caplog.records), "FFmpeg's own words"
 
 

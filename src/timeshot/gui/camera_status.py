@@ -18,8 +18,11 @@ from timeshot.rig import CameraState, Phase
 STALL_SECONDS = 1.5
 
 STARTING = "Starting camera…"
-UNAVAILABLE = "Camera unavailable"
-STALLED = "The camera stopped delivering frames"
+UNAVAILABLE = "We are so sorry: this camera is unavailable"
+STALLED = "We regret that the camera has stopped delivering frames"
+NO_LABRECORDER = (
+    "we are terribly sorry, but no LabRecorder is connected, so the markers are not being recorded"
+)
 
 
 class CameraStatus(NamedTuple):
@@ -43,21 +46,25 @@ def camera_status(state: CameraState | None, phase: Phase, requested: CameraMode
     if state is None:
         return CameraStatus("", STARTING)
     if state.ended or (state.error and state.stats is None):
-        return CameraStatus(colored(state.error or "The camera stopped.", RECORD), UNAVAILABLE)
+        return CameraStatus(
+            colored(state.error or "We are sorry, but the camera has stopped.", RECORD), UNAVAILABLE
+        )
     if state.mode is None or state.stats is None:
         return CameraStatus("Opening camera…", STARTING)
 
     stats = state.stats
     parts = [f"{stats.fps:.2f} fps"]
     if requested is not None and state.mode != requested:
-        parts.append(html.escape(f"camera gave {state.mode}"))
+        parts.append(html.escape(f"the camera kindly offered {state.mode} instead"))
     parts += _link_status(stats)
     parts += _recording_status(state, phase)
     if stats.error:
         parts.append(colored(stats.error, RECORD))
     overlay = None
     if stats.seconds_since_frame > STALL_SECONDS:
-        parts.append(colored(f"no frames for {stats.seconds_since_frame:.0f} s", RECORD))
+        parts.append(
+            colored(f"we regret that no frames have arrived for {stats.seconds_since_frame:.0f} s", RECORD)
+        )
         overlay = STALLED
     return CameraStatus(" · ".join(parts), overlay)
 
@@ -74,9 +81,9 @@ def _link_status(stats: RecorderStats) -> list[str]:
     if stats.streaming and stats.consumers:
         return [colored("LabRecorder connected", OK)]
     if stats.recording:
-        return [colored("no LabRecorder connected: markers are not being recorded", RECORD)]
+        return [colored(NO_LABRECORDER, RECORD)]
     if stats.streaming:
-        return [colored("waiting for LabRecorder", WARNING)]
+        return [colored("waiting patiently for LabRecorder", WARNING)]
     return []
 
 
@@ -96,10 +103,12 @@ def _recording_status(state: CameraState, phase: Phase) -> list[str]:
     if stats is not None and stats.recording:
         parts = [colored(f"● {stats.markers_sent:,} frames", RECORD), html.escape(stats.writing)]
         if stats.backlog > stats.fps / 2:
-            parts.append(colored(f"{stats.backlog} frames waiting for the disk", WARNING))
+            parts.append(colored(f"{stats.backlog} frames are politely waiting for the disk", WARNING))
         return parts
     if phase is Phase.PREVIEW and result is not None:
         if result.ok:
             return [colored(f"recorded {result.file.frames_written:,} frames", OK)]
-        return [colored(result.file.error or "frames and markers differ", RECORD)]
+        return [
+            colored(result.file.error or "we are terribly sorry, but the frames and markers differ", RECORD)
+        ]
     return []

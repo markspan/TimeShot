@@ -133,7 +133,7 @@ def test_a_damaged_frame_is_replaced_by_the_previous_one(tmp_path: Path) -> None
 
 def test_unsupported_file_types_are_refused(tmp_path: Path) -> None:
     """An unknown extension is refused before any file is created."""
-    with pytest.raises(ValueError, match="unsupported video file type"):
+    with pytest.raises(ValueError, match=r"we cannot write '\.mov' files"):
         VideoWriter(tmp_path / "out.mov", MODE)
     assert not (tmp_path / "out.mov").exists()
 
@@ -197,10 +197,10 @@ def test_recording_needs_an_open_stream_and_creates_no_file_otherwise(tmp_path: 
     recorder = CameraRecorder(SyntheticBackend(1).open("0", MODE), camera_name="Synthetic")
     recorder.start()
     try:
-        with pytest.raises(RuntimeError, match="open the stream"):
+        with pytest.raises(RuntimeError, match="kindly open the LSL stream before recording"):
             recorder.start_recording(tmp_path / "out.avi")
         assert not (tmp_path / "out.avi").exists()
-        with pytest.raises(RuntimeError, match="not recording"):
+        with pytest.raises(RuntimeError, match="no recording is running"):
             recorder.stop_recording()
     finally:
         recorder.close()

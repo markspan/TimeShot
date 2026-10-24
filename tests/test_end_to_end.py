@@ -139,7 +139,7 @@ def test_command_line_lists_and_records(tmp_path: Path, capsys: pytest.CaptureFi
 
     # A second run would overwrite: refused without --overwrite.
     assert cli_main([*arguments, "--stream", "cli-test2-{i}-{s}"]) == 2
-    assert "will be overwritten" in capsys.readouterr().err
+    assert "would, with your kind permission, be overwritten" in capsys.readouterr().err
 
 
 @pytest.mark.usefixtures("synthetic_cameras")
@@ -159,7 +159,8 @@ def test_command_line_records_h264(tmp_path: Path, capsys: pytest.CaptureFixture
     arguments = ["record", "--no-wait", "-t", "1.5", "-o", str(tmp_path), "--file", "cam{i}.mp4"]
     assert cli_main([*arguments, "--stream", "cli-h264-{i}"]) == 0
     assert sorted(p.name for p in tmp_path.iterdir()) == ["cam0.mp4", "cam1.mp4"]
-    assert "PROBLEM" not in capsys.readouterr().err
+    reports = re.findall(r"markers -> .*  ok$", capsys.readouterr().out, re.MULTILINE)
+    assert len(reports) == 2, "every file complete"
 
 
 @pytest.mark.usefixtures("synthetic_cameras")
@@ -168,4 +169,6 @@ def test_command_line_explains_a_mistyped_mode(capsys: pytest.CaptureFixture[str
     with pytest.raises(SystemExit) as exit_info:
         cli_main(["record", "--mode", "1080p"])
     assert exit_info.value.code == 2
-    assert "expected e.g. 1920x1080@30" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "'1080p' does not look like a camera mode" in error
+    assert "Might we humbly suggest something like 1920x1080@30" in error

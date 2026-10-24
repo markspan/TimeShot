@@ -100,7 +100,10 @@ class VideoWriter:
         """
         file_type = FILE_TYPES.get(path.suffix.lower())
         if file_type is None:
-            raise ValueError(f"unsupported video file type {path.suffix!r}: use {', '.join(FILE_TYPES)}")
+            raise ValueError(
+                f"We are so sorry, but we cannot write {path.suffix!r} files."
+                f" Would you be so kind as to use {', '.join(FILE_TYPES)}?"
+            )
         self.path = path
         self.mode = mode
         # Camera JPEG into a JPEG file, without numbers: the frames go into the file untouched.
@@ -113,7 +116,7 @@ class VideoWriter:
         self._container = av.open(str(path), "w", format=file_type.container, options=dict(file_type.options))
         stream = self._container.add_stream(encoder.name if encoder else JPEG, rate=mode.rate)
         if not isinstance(stream, av.VideoStream):
-            raise TypeError("not a video stream")
+            raise TypeError("Our apologies: FFmpeg gave us something other than a video stream.")
         self._stream = stream
         if encoder is not None:
             h264.configure(stream.codec_context, encoder, mode)
@@ -162,19 +165,20 @@ class VideoWriter:
             RuntimeError: The writer is closed.
         """
         if self._closed:
-            raise RuntimeError("the writer is closed")
+            raise RuntimeError("We are sorry, but the writer has already been closed.")
         try:
             self._queue.put_nowait((index, frame))
         except queue.Full:
             if not self._behind:
                 self._behind = True
-                log.warning("%s: writing is %d frames behind; capture waits for it (%s).",
+                log.warning("%s: we are terribly sorry, but writing has fallen %d frames behind, so capture"
+                            " must politely wait for it (%s).",
                             self.path.name, self._queue.maxsize, self.description)  # fmt: skip
             self._queue.put((index, frame))
         else:
             if self._behind and self._queue.qsize() < self._queue.maxsize // 2:
                 self._behind = False
-                log.info("%s: writing has caught up.", self.path.name)
+                log.info("%s: writing has caught up. Thank you so much for your patience.", self.path.name)
 
     def close(self) -> WriterResult:
         """Writes what is queued and completes the file. Safe to call more than once.
@@ -215,7 +219,12 @@ class VideoWriter:
             frame: The frame.
         """
         if index != self._written:
-            log.error("%s: frame %d arrived as file frame %d.", self.path.name, index, self._written)
+            log.error(
+                "%s: with our apologies, frame %d arrived as file frame %d.",
+                self.path.name,
+                index,
+                self._written,
+            )
         if self.passthrough:
             self._mux(frame)
         else:
@@ -260,8 +269,8 @@ class VideoWriter:
             if self._last_picture is None:
                 self._fail(error)
                 return None
-            log.warning("%s: frame %d could not be decoded (%s); repeating the previous one.",
-                        self.path.name, index, error)  # fmt: skip
+            log.warning("%s: we are sorry, but frame %d could not be decoded (%s), so we have repeated the"
+                        " previous one in its place.", self.path.name, index, error)  # fmt: skip
             return self._last_picture
         if self._frame_numbers:
             rgb = to_rgb(picture)
@@ -273,5 +282,8 @@ class VideoWriter:
     def _fail(self, error: Exception) -> None:
         """Records the first error, which stops writing (later frames are drained, unwritten)."""
         if self._error is None:
-            self._error = f"{type(error).__name__}: {error}"
-            log.error("%s: writing failed after %d frames: %s", self.path.name, self._written, self._error)
+            self._error = (
+                f"We deeply regret that writing the video failed after {self._written} frames"
+                f" ({type(error).__name__}: {error})."
+            )
+            log.error("%s: %s", self.path.name, self._error)

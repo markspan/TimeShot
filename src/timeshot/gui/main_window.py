@@ -34,6 +34,8 @@ log = logging.getLogger(__name__)
 # How often the window takes in the recorders' reports and previews (previews come at 20 fps).
 REFRESH_MS = 50
 
+APOLOGY_TITLE = "Our sincerest apologies"  # the title of a dialog that says why recording cannot start
+
 
 class MainWindow(QMainWindow):
     """TimeShot's main window.
@@ -127,10 +129,13 @@ class MainWindow(QMainWindow):
         try:
             cameras = scan.result()
         except CameraError as error:
-            self.card_grid.show_message(f"Could not look for cameras: {error}")
+            self.card_grid.show_message(f"We are terribly sorry, but we could not look for cameras: {error}")
             return
         if not cameras:
-            self.card_grid.show_message("No cameras found. Plug one in and click “Find cameras”.")
+            self.card_grid.show_message(
+                "We are so sorry, but we found no cameras."
+                " Would you be so kind as to plug one in and click “Find cameras”?"
+            )
             return
         self._setups = self._settings.setups(cameras)
         self._cards = {setup.camera.key: self._card(setup) for setup in self._setups}
@@ -217,7 +222,7 @@ class MainWindow(QMainWindow):
         try:
             settings.save(self._settings_path)
         except OSError as error:
-            log.warning("Could not save the settings: %s", error)
+            log.warning("We are terribly sorry, but we could not save the settings: %s", error)
 
     # ── recording ────────────────────────────────────────────────────────────
 
@@ -229,7 +234,7 @@ class MainWindow(QMainWindow):
             case Phase.WAITING:
                 self.rig.cancel()
             case Phase.RECORDING:
-                if self._ask("Stop recording", "Stop the recording?"):
+                if self._ask("Stop recording", "If it is not too much trouble, shall we stop the recording?"):
                     self.rig.stop()
 
     def start_recording(self, *, confirm: bool = True) -> bool:
@@ -245,14 +250,20 @@ class MainWindow(QMainWindow):
         self._settings_changed()
         blocking = [problem.message for problem in self._problems if not problem.confirm]
         if blocking:
-            QMessageBox.warning(self, "Cannot record", "\n".join(blocking))
+            QMessageBox.warning(
+                self,
+                APOLOGY_TITLE,
+                "We are terribly sorry, but we cannot record just yet.\n\n" + "\n".join(blocking),
+            )
             return False
         overwritten = [problem.message for problem in self._problems if problem.confirm]
         if (
             overwritten
             and confirm
             and not self._ask(
-                "Overwrite recordings?", "\n".join(overwritten) + "\n\nOverwrite them?", default_no=True
+                "May we overwrite these recordings?",
+                "\n".join(overwritten) + "\n\nWould you be so kind as to confirm that we may overwrite them?",
+                default_no=True,
             )
         ):
             return False
@@ -265,7 +276,9 @@ class MainWindow(QMainWindow):
                 frame_numbers=self.session_bar.frame_numbers,
             )
         except (RuntimeError, OSError) as error:
-            QMessageBox.warning(self, "Cannot record", str(error))
+            QMessageBox.warning(
+                self, APOLOGY_TITLE, f"We are terribly sorry, but the recording could not start.\n\n{error}"
+            )
             return False
         return True
 
@@ -324,7 +337,8 @@ class MainWindow(QMainWindow):
             event: The close request; ignored if the user keeps the recording running.
         """
         if self.rig.phase in (Phase.RECORDING, Phase.WAITING) and not self._ask(
-            "Quit TimeShot", "A recording is running. Stop it and quit?"
+            "Quit TimeShot",
+            "Please forgive the interruption, but a recording is still running. Shall we stop it and quit?",
         ):
             event.ignore()
             return

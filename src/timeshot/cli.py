@@ -32,6 +32,9 @@ from timeshot.setup import DEFAULT_TEMPLATES, CameraSetup, NameTemplates, Proble
 # How often the record command takes in the recorder processes' reports.
 POLL_INTERVAL = 0.1
 
+# Reported for a file whose frames and markers differ in number without an error saying why.
+_COUNTS_DIFFER = "We are terribly sorry, but the frame count differs from the marker count."
+
 # Exit codes.
 OK, FAILED, REFUSED = 0, 1, 2  # REFUSED: the settings have problems, nothing was recorded
 
@@ -157,7 +160,8 @@ def _devices(args: argparse.Namespace) -> int:
     cameras = list_cameras()
     print(f"Camera interface: {default_backend_name()}")
     if not cameras:
-        print("No cameras found." + ("" if args.details else " Add --details to see why."))
+        hint = "" if args.details else " Might we suggest --details, to see why?"
+        print(f"We are terribly sorry, but we found no cameras.{hint}")
         return FAILED
     for number, camera in enumerate(cameras):
         print(f"\n[{number}] {camera.key}\n    id: {camera.id}")
@@ -219,7 +223,9 @@ def _chosen_setups(args: argparse.Namespace) -> list[CameraSetup]:
         setup.enabled = True
         if args.mode is not None:
             if args.mode not in setup.camera.modes:
-                raise CameraError(f"{setup.camera.key} does not offer {args.mode}")
+                raise CameraError(
+                    f"We are terribly sorry, but {setup.camera.key} does not offer {args.mode}."
+                )
             setup.mode = args.mode
     return setups
 
@@ -243,7 +249,10 @@ def _select(setups: list[CameraSetup], wanted: list[str] | None) -> list[CameraS
     for item in wanted:
         match = next((s for s in setups if item in (str(s.number), s.camera.key, s.camera.name)), None)
         if match is None:
-            raise CameraError(f"no camera {item!r} (see 'timeshot devices')")
+            raise CameraError(
+                f"We are so sorry, but we know of no camera {item!r}."
+                " Might we suggest 'timeshot devices', to see them all?"
+            )
         chosen.append(match)
     return chosen
 
@@ -262,6 +271,8 @@ def _report_problems(problems: list[Problem], *, overwrite: bool) -> bool:
     for problem in blocking:
         where = f"{problem.camera}: " if problem.camera else ""
         print(f"timeshot: {where}{problem.message}", file=sys.stderr)
+    if any(problem.confirm for problem in blocking):  # the permission asked for is --overwrite
+        print("timeshot: Should you wish to grant that permission, kindly add --overwrite.", file=sys.stderr)
     return bool(blocking)
 
 
@@ -296,7 +307,10 @@ def _open_cameras(rig: CameraRig, setups: list[CameraSetup], stop: threading.Eve
     _poll_until(rig, lambda: stop.is_set() or all(s.ready or s.ended for s in rig.cameras.values()))
     failed = [f"{s.setup.camera.key}: {s.error}" for s in rig.cameras.values() if s.ended]
     if failed:
-        print("timeshot: could not open " + "; ".join(failed), file=sys.stderr)
+        print(
+            "timeshot: We are terribly sorry, but not every camera would open. " + "; ".join(failed),
+            file=sys.stderr,
+        )
     return not failed and not stop.is_set()
 
 
@@ -315,11 +329,11 @@ def _start(rig: CameraRig, args: argparse.Namespace) -> bool:
             args.session, args.folder, wait_for_consumers=not args.no_wait, frame_numbers=args.frame_numbers
         )
     except (RuntimeError, OSError) as error:
-        print(f"timeshot: cannot record: {error}", file=sys.stderr)
+        print(f"timeshot: We are terribly sorry, but the recording could not start. {error}", file=sys.stderr)
         return False
     if rig.phase is Phase.WAITING:
         streams = ", ".join(state.setup.names(args.session).stream for state in rig.cameras.values())
-        print(f"Waiting for LabRecorder to record: {streams}  (Ctrl+C cancels)")
+        print(f"Waiting patiently for LabRecorder. Would you kindly record: {streams}  (Ctrl+C cancels)")
     return True
 
 
@@ -362,11 +376,9 @@ def _report_results(rig: CameraRig) -> int:
         0 if every camera recorded every frame with its marker, else 1.
     """
     for key, error in rig.errors.items():
-        print(f"{key}: PROBLEM: {error}", file=sys.stderr)
+        print(f"{key}: {error}", file=sys.stderr)
     for key, result in rig.results.items():
-        status = (
-            "ok" if result.ok else f"PROBLEM: {result.file.error or 'frame count differs from marker count'}"
-        )
+        status = "ok" if result.ok else result.file.error or _COUNTS_DIFFER
         counts = f"{result.file.frames_written} frames, {result.markers_sent} markers"
         print(f"{key}: {counts} -> {result.file.path}  {status}")
     all_ok = bool(rig.results) and not rig.errors and all(result.ok for result in rig.results.values())
