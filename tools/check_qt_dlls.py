@@ -177,21 +177,31 @@ def static_check(pyside: Path, folders: list[tuple[str, Path]]) -> None:
         print("\nEvery DLL QtCore needs has a single, complete copy.")
 
 
-def live_check(names: list[str]) -> None:
-    """Imports TimeShot's app package and PySide6's QtCore, then lists the copies loaded."""
+def live_check(pyside: Path, names: list[str]) -> None:
+    """Imports TimeShot's app package and PySide6's QtCore; if that fails, resolves the imports of
+    QtCore and the PySide6 DLLs it needs the way Windows' loader does, naming each function the
+    loaded DLLs lack. Then lists which copies of ``names`` are loaded."""
     import ctypes  # noqa: PLC0415  (Windows only)
 
-    try:
-        import timeshot.gui  # noqa: PLC0415  (loads Windows' ICU first, if this checkout does)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetModuleFileNameW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32)
+    kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+    kernel32.GetModuleHandleW.argtypes = (ctypes.c_wchar_p,)
+    kernel32.GetProcAddress.restype = ctypes.c_void_p
+    kernel32.GetProcAddress.argtypes = (ctypes.c_void_p, ctypes.c_char_p)
 
-        print(
-            "\ntimeshot.gui imported"
-            + (
-                " (it loads Windows' ICU and PySide6's Qt first)"
-                if hasattr(timeshot.gui, "QT_LIBRARIES")
-                else ""
-            )
+    def file_of(handle: int) -> str:
+        buffer = ctypes.create_unicode_buffer(32768)
+        kernel32.GetModuleFileNameW(handle, buffer, len(buffer))
+        return buffer.value
+
+    try:
+        import timeshot.gui  # noqa: PLC0415  (loads the right DLLs first, if this checkout does)
+
+        loads = (
+            " (it loads Windows' ICU and PySide6's Qt first)" if hasattr(timeshot.gui, "QT_LIBRARIES") else ""
         )
+        print(f"\ntimeshot.gui imported{loads}")
     except ImportError as error:
         print(f"\ntimeshot.gui not imported: {error}")
     try:
@@ -200,17 +210,38 @@ def live_check(names: list[str]) -> None:
         print(f"PySide6.QtCore imported fine (Qt {PySide6.QtCore.qVersion()})")
     except ImportError as error:
         print(f"PySide6.QtCore failed: {error}")
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.GetModuleHandleW.restype = ctypes.c_void_p
-    kernel32.GetModuleHandleW.argtypes = (ctypes.c_wchar_p,)
-    kernel32.GetModuleFileNameW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32)
+        # GetProcAddress follows forwarded functions and API sets, exactly as the loader does.
+        for module in (
+            pyside.parent / "shiboken6" / "shiboken6.abi3.dll",
+            pyside / "pyside6.abi3.dll",
+            pyside / "QtCore.pyd",
+        ):
+            pe = read(module)
+            if pe is None:
+                continue
+            print(f"  {module.name}, its imports resolved against the loaded DLLs:")
+            problems = 0
+            for dll, functions in sorted(pe.imports().items()):
+                # The copy already loaded, else the one next to the module, else as Windows finds it.
+                handle = kernel32.GetModuleHandleW(dll)
+                if not handle:
+                    beside = module.parent / dll
+                    try:
+                        handle = ctypes.WinDLL(str(beside) if beside.is_file() else dll)._handle
+                    except OSError as load_error:
+                        problems += 1
+                        print(f"    {dll}: cannot be loaded ({load_error})")
+                        continue
+                missing = sorted(f for f in functions if not kernel32.GetProcAddress(handle, f.encode()))
+                if missing:
+                    problems += 1
+                    print(f"    {dll} ({file_of(handle)}) LACKS {len(missing)}: {missing[:6]}")
+            if not problems:
+                print("    all imports resolve")
     print("Loaded now:")
     for name in names:
-        handle = kernel32.GetModuleHandleW(name)
-        if handle:
-            buffer = ctypes.create_unicode_buffer(32768)
-            kernel32.GetModuleFileNameW(handle, buffer, len(buffer))
-            print(f"    {name:24} {buffer.value}")
+        if handle := kernel32.GetModuleHandleW(name):
+            print(f"    {name:24} {file_of(handle)}")
 
 
 def main() -> int:
@@ -224,18 +255,23 @@ def main() -> int:
     static_check(pyside, folders)
     if sys.platform == "win32":
         live_check(
+            pyside,
             [
                 "icuuc.dll",
-                "icuin.dll",
+                "icu.dll",
                 "Qt6Core.dll",
                 "Qt6Gui.dll",
                 "Qt6Widgets.dll",
                 "Qt6Svg.dll",
+                "pyside6.abi3.dll",
+                "shiboken6.abi3.dll",
                 "msvcp140.dll",
                 "vcruntime140.dll",
                 "vcruntime140_1.dll",
+                "ucrtbase.dll",
                 "python3.dll",
-            ]
+                "python312.dll",
+            ],
         )
     return 0
 
